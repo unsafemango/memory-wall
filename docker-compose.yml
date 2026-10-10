@@ -12,7 +12,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio
+    command: server /data --console-address ":9001"
     container_name: minio
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -22,7 +23,6 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
-    command: server /data --console-address ":9001"
 
   api:
     # TODO: Add API configuration
@@ -42,6 +42,6 @@ services:
     depends_on:
       - api
 
-  volumes:
-    postgres_data:
-    minio_data:
+volumes:
+  postgres_data:
+  minio_data:
