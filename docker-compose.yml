@@ -3,17 +3,16 @@ services:
     image: postgres:16
     container_name: postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: app
+      POSTGRES_USER: memorywall
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: memorywall
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
+    image: bitnamilegacy/minio:latest
     container_name: minio
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -22,14 +21,13 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - minio_data:/bitnami/minio/data
 
   api:
-    # TODO: Add API configuration
     build: ./api
+    env_file: ./api/.env
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8080:8080"
     depends_on:
       - postgres
       - minio
