@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS media;
+DROP TABLE IF EXISTS submissions;
+DROP TABLE IF EXISTS invitations;
+DROP TABLE IF EXISTS events;

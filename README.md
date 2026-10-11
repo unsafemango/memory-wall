@@ -7,7 +7,7 @@ A private memory wall for any event, a birthday, a wedding, a graduation, a goin
 - **API:** Go, Chi router, Postgres
 - **Web:** Next.js, TypeScript
 - **Storage:** S3-compatible (MinIO locally, Cloudflare R2 in production), presigned direct uploads
-- **Auth:** Invitation tokens for contributors, Argon2id-hashed password for admin/moderation
+- **Auth:** Organizer accounts (email + Argon2id-hashed password, Postgres-backed sessions) for creating events and moderating; invitation tokens for contributors
 
 ## Status
 
