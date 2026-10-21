@@ -1,40 +1,41 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"log"
 	"net/http"
+	"os"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	httpapi "github.com/unsafemango/memory-wall/internal/http"
+	"github.com/unsafemango/memory-wall/internal/store"
 )
 
 func main() {
-	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	ctx := context.Background()
 
-	r.Get("/api/healthz", healthzHandler)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		log.Fatalf("connect to database: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(ctx); err != nil {
+		log.Fatalf("ping database: %v", err)
+	}
+
+	server := httpapi.NewServer(
+		store.NewInvitationStore(db),
+		store.NewSubmissionStore(db),
+	)
 
 	log.Println("listening on :8080")
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	if err := http.ListenAndServe(":8080", server.Routes()); err != nil {
 		log.Fatal(err)
 	}
-}
-
-// corsMiddleware lets the Next.js app on localhost:3000 call this API from the browser.
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func healthzHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

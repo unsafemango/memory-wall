@@ -10,6 +10,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memorywall -d memorywall"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
   minio:
     image: bitnamilegacy/minio:latest
@@ -29,8 +34,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
 
   web:
     # TODO: Add web configuration
