@@ -1,6 +1,8 @@
 -- Dev seed data: one event and one invitation.
 -- Safe to run more than once.
 -- The invitation link is http://localhost:3000/invite/dev-token-plaintext.
+-- Invitations are single-use: once a memory is left with it, delete the row
+-- and run this again to get a fresh one.
 -- Only the SHA-256 hash of the token is stored, same as real invitations.
 WITH new_event AS (
   INSERT INTO events (title, slug, moderation_enabled) VALUES ('Sarah''s Event', 'sarah', false)

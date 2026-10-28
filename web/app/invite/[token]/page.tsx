@@ -28,6 +28,7 @@ export default function InvitePage() {
     fetch(`${API_URL}/api/invitations/${token}`)
       .then(async (res) => {
         if (res.ok) setInvitation(await res.json());
+        else if (res.status === 410) setLinkError(`Sorry, ${await res.text()}. Ask whoever sent it for a new link.`);
         else setLinkError("This invitation link isn't valid. Ask whoever sent it for a new one.");
       })
       .catch(() => setLinkError("We couldn't reach the server. Try again in a minute."));

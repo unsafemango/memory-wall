@@ -65,12 +65,7 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasMedia {
-		id, err := s.submissions.Create(r.Context(), sub)
-		if err != nil {
-			http.Error(w, "could not save submission", http.StatusInternalServerError)
-			return
-		}
-		writeCreated(w, id)
+		s.saveSubmission(w, r, sub, nil)
 		return
 	}
 
@@ -97,19 +92,24 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sub.Type = rule.kind
-	id, err := s.submissions.CreateWithMedia(r.Context(), sub, store.Media{
+	s.saveSubmission(w, r, sub, &store.Media{
 		StorageKey: input.StorageKey,
 		MimeType:   input.MimeType,
 		FileSize:   size,
 	})
+}
+
+func (s *Server) saveSubmission(w http.ResponseWriter, r *http.Request, sub store.Submission, media *store.Media) {
+	id, err := s.submissions.Create(r.Context(), sub, media)
+	if errors.Is(err, store.ErrInvitationUsed) {
+		http.Error(w, "this invitation has already been used", http.StatusGone)
+		return
+	}
 	if err != nil {
 		http.Error(w, "could not save submission", http.StatusInternalServerError)
 		return
 	}
-	writeCreated(w, id)
-}
 
-func writeCreated(w http.ResponseWriter, id string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": id})

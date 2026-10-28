@@ -9,6 +9,10 @@ import (
 var ErrDuplicate = errors.New("already exists")
 var ErrNotFound = errors.New("not found")
 
+// ErrInvitationUsed means the invitation was already used, or expired, by
+// the time the submission was saved.
+var ErrInvitationUsed = errors.New("invitation already used")
+
 // mapDuplicate turns a unique-constraint violation into ErrDuplicate.
 func mapDuplicate(err error) error {
 	var pgErr *pgconn.PgError

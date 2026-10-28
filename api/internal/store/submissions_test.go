@@ -22,27 +22,24 @@ func TestSubmissionRoundTrip(t *testing.T) {
 	}
 	defer db.Close()
 
-	// Find the seeded event and invitation.
-	var eventID, invitationID string
-	err = db.QueryRow(ctx,
-		`SELECT i.event_id, i.id FROM invitations i
-		 WHERE i.token_hash = encode(sha256('dev-token-plaintext'::bytea), 'hex')`,
-	).Scan(&eventID, &invitationID)
+	// Find the seeded event. The test leaves InvitationID empty so it doesn't
+	// use up the seeded invitation.
+	var eventID string
+	err = db.QueryRow(ctx, `SELECT id FROM events WHERE slug = 'sarah'`).Scan(&eventID)
 	if err != nil {
-		t.Fatalf("find seed invitation (did you run scripts/seed.sql?): %v", err)
+		t.Fatalf("find seed event (did you run scripts/seed.sql?): %v", err)
 	}
 
 	submissions := NewSubmissionStore(db)
 	want := Submission{
-		EventID:      eventID,
-		InvitationID: invitationID,
-		SenderName:   "Round Trip Test",
-		Type:         "note",
-		Message:      "hello from the test",
-		Status:       "approved",
+		EventID:    eventID,
+		SenderName: "Round Trip Test",
+		Type:       "note",
+		Message:    "hello from the test",
+		Status:     "approved",
 	}
 
-	id, err := submissions.Create(ctx, want)
+	id, err := submissions.Create(ctx, want, nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

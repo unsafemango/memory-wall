@@ -40,14 +40,52 @@ func NewSubmissionStore(db *pgxpool.Pool) *SubmissionStore {
 	return &SubmissionStore{db: db}
 }
 
-func (s *SubmissionStore) Create(ctx context.Context, sub Submission) (string, error) {
+// Create saves a submission, with its uploaded file when media is non-nil.
+// In the same transaction it marks the invitation as used, so a link can only
+// be used once even if two requests race. Returns ErrInvitationUsed if the
+// invitation was already used or has expired.
+func (s *SubmissionStore) Create(ctx context.Context, sub Submission, media *Media) (string, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	if sub.InvitationID != "" {
+		tag, err := tx.Exec(ctx,
+			`UPDATE invitations SET used_at = now()
+			 WHERE id = $1 AND used_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
+			sub.InvitationID,
+		)
+		if err != nil {
+			return "", err
+		}
+		if tag.RowsAffected() == 0 {
+			return "", ErrInvitationUsed
+		}
+	}
+
 	var id string
-	err := s.db.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`INSERT INTO submissions (event_id, invitation_id, sender_name, type, message, status)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		 VALUES ($1, NULLIF($2, '')::uuid, $3, $4, NULLIF($5, ''), $6) RETURNING id`,
 		sub.EventID, sub.InvitationID, sub.SenderName, sub.Type, sub.Message, sub.Status,
 	).Scan(&id)
-	return id, err
+	if err != nil {
+		return "", err
+	}
+
+	if media != nil {
+		_, err = tx.Exec(ctx,
+			`INSERT INTO media (submission_id, storage_key, mime_type, file_size) VALUES ($1, $2, $3, $4)`,
+			id, media.StorageKey, media.MimeType, media.FileSize,
+		)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return id, tx.Commit(ctx)
 }
 
 func (s *SubmissionStore) GetByID(ctx context.Context, id string) (Submission, error) {

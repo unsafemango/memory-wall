@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,15 @@ func (s *Server) invitationFromRequest(w http.ResponseWriter, r *http.Request) (
 	}
 	if err != nil {
 		http.Error(w, "could not look up invitation", http.StatusInternalServerError)
+		return invitation, false
+	}
+	// 410 Gone: the link was real, but can't be used any more.
+	if invitation.UsedAt != nil {
+		http.Error(w, "this invitation has already been used", http.StatusGone)
+		return invitation, false
+	}
+	if !invitation.Usable(time.Now()) {
+		http.Error(w, "this invitation has expired", http.StatusGone)
 		return invitation, false
 	}
 	return invitation, true
