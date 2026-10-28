@@ -29,6 +29,7 @@ func (s *Server) Routes() http.Handler {
 
 	r.Get("/api/healthz", healthz)
 	r.Get("/api/invitations/{token}", s.getInvitation)
+	r.Post("/api/invitations/{token}/submissions", s.createSubmission)
 
 	return r
 }
