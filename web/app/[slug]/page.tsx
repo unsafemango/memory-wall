@@ -53,6 +53,16 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
           <MemoryCard key={m.id} memory={m} />
         ))}
       </section>
+
+      {event.closing_message && (
+        <section className="closing-wrap">
+          <div className="message-wrap">
+            <div className="tag">For {event.title}</div>
+            <p>{event.closing_message}</p>
+            <div className="signoff">With love, always</div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

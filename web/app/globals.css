@@ -129,14 +129,27 @@ h3 {
   color: var(--ink-soft);
 }
 
+/* A few memories sit centred in a row; four or more flow into masonry columns. */
 .timeline {
   max-width: 980px;
   margin: 0 auto;
   padding: 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 24px;
+}
+.timeline > * {
+  width: min(100%, 300px);
+}
+.timeline:has(> :nth-child(4)) {
+  display: block;
   columns: 3 280px;
   column-gap: 24px;
 }
-.timeline > * {
+.timeline:has(> :nth-child(4)) > * {
+  width: auto;
   break-inside: avoid;
   margin-bottom: 24px;
 }
@@ -202,4 +215,54 @@ h3 {
   .timeline > .polaroid:hover {
     transform: rotate(0deg) scale(1.01);
   }
+}
+
+/* The organizer's closing message, set apart from the guests' cards */
+.closing-wrap {
+  max-width: 640px;
+  margin: 40px auto 0;
+  padding: 0 20px;
+}
+.message-wrap {
+  position: relative;
+  text-align: center;
+  padding: 44px 28px 32px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, var(--pink) 0%, var(--purple) 100%);
+  color: #fff;
+  box-shadow: 0 24px 48px -24px rgba(109, 40, 217, 0.6);
+}
+/* Heart badge floating over the top edge */
+.message-wrap::before {
+  content: "♥";
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--pink-deep);
+  font-size: 1.5rem;
+  box-shadow: 0 8px 20px -8px rgba(59, 29, 74, 0.5);
+}
+.message-wrap .tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.message-wrap p {
+  margin: 14px 0 18px;
+  font-size: 1.2rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.message-wrap .signoff {
+  font-family: var(--font-fredoka), var(--font-quicksand), sans-serif;
+  font-size: 1.1rem;
 }
