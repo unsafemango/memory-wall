@@ -40,3 +40,41 @@ h2,
 h3 {
   font-family: var(--font-fredoka), var(--font-quicksand), system-ui, sans-serif;
 }
+
+/* Confetti in the event page hero */
+.fx-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.confetti {
+  position: absolute;
+  top: -8%;
+  width: 8px;
+  height: 13px;
+  border-radius: 2px;
+  opacity: 0.9;
+  animation: fall linear infinite;
+}
+.confetti.round {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+@keyframes fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(460px) rotate(360deg);
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    animation: none;
+    display: none;
+  }
+}
