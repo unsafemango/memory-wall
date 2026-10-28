@@ -1,9 +1,11 @@
 import type { Memory } from "@/lib/types";
 
-export function MemoryCard({ memory }: { memory: Memory }) {
+// isNew marks a memory that arrived while the page was open, so it fades in.
+export function MemoryCard({ memory, isNew = false }: { memory: Memory; isNew?: boolean }) {
+  const extra = isNew ? " memory-new" : "";
   if (memory.type === "note" || !memory.media_url) {
     return (
-      <article className="note-card">
+      <article className={`note-card${extra}`}>
         <p className="msg">{memory.message}</p>
         <span className="sender">{memory.sender_name}</span>
       </article>
@@ -11,7 +13,7 @@ export function MemoryCard({ memory }: { memory: Memory }) {
   }
 
   return (
-    <article className="polaroid">
+    <article className={`polaroid${extra}`}>
       {memory.type === "video" ? (
         <video
           className="thumb"

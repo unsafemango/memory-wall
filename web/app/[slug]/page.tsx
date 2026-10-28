@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { formatDate } from "@/lib/format";
 import type { EventInfo, Memory } from "@/lib/types";
 import { Confetti } from "./Confetti";
-import { MemoryCard } from "./MemoryCard";
+import { LiveWall } from "./LiveWall";
 
 // Server-side requests can use a different address than the browser does,
 // e.g. http://api:8080 inside Docker.
@@ -38,15 +38,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         <p className="hero-sub">A few people who love you wanted to leave you something.</p>
       </section>
 
-      {memories.length === 0 ? (
-        <p className="empty-state">No memories yet. Check back soon.</p>
-      ) : (
-        <section className="timeline" aria-label="Memories">
-          {memories.map((m) => (
-            <MemoryCard key={m.id} memory={m} />
-          ))}
-        </section>
-      )}
+      <LiveWall slug={event.slug} initial={memories} />
 
       {event.closing_message && (
         <section className="closing-wrap">
