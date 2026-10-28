@@ -53,6 +53,8 @@ func main() {
 	})
 
 	server := httpapi.NewServer(httpapi.Deps{
+		Organizers:  store.NewOrganizerStore(db),
+		Sessions:    store.NewSessionStore(db),
 		Events:      store.NewEventStore(db),
 		Invitations: store.NewInvitationStore(db),
 		Submissions: store.NewSubmissionStore(db),

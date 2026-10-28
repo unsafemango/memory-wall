@@ -13,6 +13,8 @@ import (
 // Server holds everything the handlers need. Each handler is a method on it,
 // so inside a handler you reach the database through s.invitations, s.submissions, etc.
 type Server struct {
+	organizers  *store.OrganizerStore
+	sessions    *store.SessionStore
 	events      *store.EventStore
 	invitations *store.InvitationStore
 	submissions *store.SubmissionStore
@@ -23,6 +25,8 @@ type Server struct {
 
 // Deps lists what NewServer needs. main.go fills it in once at startup.
 type Deps struct {
+	Organizers  *store.OrganizerStore
+	Sessions    *store.SessionStore
 	Events      *store.EventStore
 	Invitations *store.InvitationStore
 	Submissions *store.SubmissionStore
@@ -37,6 +41,8 @@ type Deps struct {
 
 func NewServer(d Deps) *Server {
 	return &Server{
+		organizers:  d.Organizers,
+		sessions:    d.Sessions,
 		events:      d.Events,
 		invitations: d.Invitations,
 		submissions: d.Submissions,
@@ -52,6 +58,7 @@ func (s *Server) Routes() http.Handler {
 	r.Use(s.corsMiddleware)
 
 	r.Get("/api/healthz", healthz)
+	r.Post("/api/auth/signup", s.signup)
 	r.Get("/api/invitations/{token}", s.getInvitation)
 	r.Post("/api/invitations/{token}/submissions", s.createSubmission)
 	r.Post("/api/invitations/{token}/suggest-message", s.suggestMessage)
@@ -72,6 +79,8 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", s.siteURL)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		// Without this the browser drops the session cookie on requests from the web app.
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
