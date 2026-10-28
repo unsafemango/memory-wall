@@ -42,6 +42,7 @@ The event page is a Server Component, so it fetches memories on the server. Ever
 - **Ownership checks live in the SQL.** Every organizer query joins on `events.owner_id`, and someone else's event or submission returns `404`, not `403`, so IDs can't be probed.
 - **CSRF.** The session cookie is `HttpOnly` and `SameSite=Lax`, CORS only allows the web app's origin, and state-changing requests with a different `Origin` header are rejected.
 - **Rate limits** are in-memory token buckets: per IP on login and signup, and per IP and per link-and-IP on guest endpoints (so a hundred guests on one share link each get their own allowance), with a tighter limit on the paid AI endpoint. This works for a single API instance. Running several would need a shared store (Redis, or a Postgres table).
+- **Live updates come from Postgres.** Triggers announce every new, approved, hidden, or deleted memory with `NOTIFY`. The API keeps one connection that `LISTEN`s and passes changes to open pages over Server-Sent Events. The manage page sees everything as it arrives, and the public page only hears about approved memories, so pending ones stay private. Because Postgres does the announcing, this also works with more than one API instance. If the connection drops, pages refetch when it comes back. Behind a proxy, make sure it doesn't buffer `text/event-stream` responses (the API sends `X-Accel-Buffering: no` for nginx).
 - **Errors** always come back as `{"error": {"code": "...", "message": "..."}}`.
 
 ## Project structure
