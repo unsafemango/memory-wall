@@ -131,7 +131,8 @@ h3 {
 
 /* A few memories sit centred in a row; four or more flow into masonry columns. */
 .timeline {
-  max-width: 980px;
+  /* Room for three 300px cards and their gaps inside the side padding. */
+  max-width: 1028px;
   margin: 0 auto;
   padding: 0 20px;
   display: flex;
@@ -534,4 +535,91 @@ a.wall-button {
 .wall-link {
   font-weight: 600;
   color: var(--purple-deep);
+}
+
+/* Home page sections */
+.home-preview {
+  position: relative;
+  max-width: 1028px;
+  margin: 0 auto;
+  padding: 8px 0 0;
+}
+.home-preview-label {
+  display: block;
+  text-align: center;
+  margin-bottom: 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.polaroid .home-photo {
+  aspect-ratio: 4 / 3;
+  background:
+    radial-gradient(circle at 30% 35%, rgba(255, 255, 255, 0.55) 0 12%, transparent 13%),
+    linear-gradient(160deg, #5ec8f0 0%, #8b5cf6 55%, #ff5da2 100%);
+}
+.home-steps {
+  max-width: 980px;
+  margin: 72px auto 0;
+  padding: 0 20px;
+  text-align: center;
+}
+.home-steps h2,
+.home-cta h2 {
+  margin: 0 0 28px;
+  font-size: clamp(1.7rem, 4vw, 2.2rem);
+  font-weight: 600;
+  color: var(--ink);
+}
+.home-steps ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+  text-align: left;
+}
+.home-steps li {
+  padding: 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.step-number {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  font-family: var(--font-fredoka), var(--font-quicksand), sans-serif;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+}
+.home-steps h3 {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--purple-deep);
+}
+.home-steps li p {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.home-extra {
+  max-width: 52ch;
+  margin: 28px auto 0;
+  color: var(--ink-soft);
+}
+.home-cta {
+  margin: 72px auto 0;
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
