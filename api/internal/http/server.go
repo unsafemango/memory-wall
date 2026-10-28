@@ -11,14 +11,23 @@ import (
 // Server holds everything the handlers need. Each handler is a method on it,
 // so inside a handler you reach the database through s.invitations, s.submissions, etc.
 type Server struct {
+	events      *store.EventStore
 	invitations *store.InvitationStore
 	submissions *store.SubmissionStore
 }
 
-func NewServer(invitations *store.InvitationStore, submissions *store.SubmissionStore) *Server {
+// Deps lists what NewServer needs. main.go fills it in once at startup.
+type Deps struct {
+	Events      *store.EventStore
+	Invitations *store.InvitationStore
+	Submissions *store.SubmissionStore
+}
+
+func NewServer(d Deps) *Server {
 	return &Server{
-		invitations: invitations,
-		submissions: submissions,
+		events:      d.Events,
+		invitations: d.Invitations,
+		submissions: d.Submissions,
 	}
 }
 
@@ -30,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/api/healthz", healthz)
 	r.Get("/api/invitations/{token}", s.getInvitation)
 	r.Post("/api/invitations/{token}/submissions", s.createSubmission)
+	r.Get("/api/events/{slug}/memories", s.getMemories)
 
 	return r
 }

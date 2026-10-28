@@ -29,10 +29,11 @@ func main() {
 		log.Fatalf("ping database: %v", err)
 	}
 
-	server := httpapi.NewServer(
-		store.NewInvitationStore(db),
-		store.NewSubmissionStore(db),
-	)
+	server := httpapi.NewServer(httpapi.Deps{
+		Events:      store.NewEventStore(db),
+		Invitations: store.NewInvitationStore(db),
+		Submissions: store.NewSubmissionStore(db),
+	})
 
 	log.Println("listening on :8080")
 	if err := http.ListenAndServe(":8080", server.Routes()); err != nil {
