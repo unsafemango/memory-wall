@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -19,6 +20,8 @@ export default function InvitePage() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Check the link first, so a bad link fails before anyone writes a message.
   useEffect(() => {
@@ -57,20 +60,26 @@ export default function InvitePage() {
     setSubmitting(true);
     setFormError("");
     try {
+      let media = {};
+      if (file) {
+        setUploadProgress(0);
+        media = await uploadFile(token, file, setUploadProgress);
+      }
       const res = await fetch(`${API_URL}/api/invitations/${token}/submissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_name: senderName, message }),
+        body: JSON.stringify({ sender_name: senderName, message, ...media }),
       });
       if (!res.ok) {
         setFormError(await res.text());
         return;
       }
       setSubmitted(true);
-    } catch {
-      setFormError("We couldn't reach the server. Try again in a minute.");
+    } catch (err) {
+      setFormError(err instanceof Error && err.message ? err.message : "We couldn't reach the server. Try again in a minute.");
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   }
 
@@ -149,10 +158,24 @@ export default function InvitePage() {
             className="min-h-32 rounded border p-2"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            required
+            required={!file}
             maxLength={5000}
+            placeholder={file ? "Optional: add a caption" : undefined}
           />
         </label>
+        <label className="flex flex-col gap-1">
+          Add a photo or video (optional)
+          <input
+            type="file"
+            accept={ACCEPTED_FILE_TYPES}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        {uploadProgress !== null && (
+          <progress className="w-full" value={uploadProgress} max={1}>
+            {Math.round(uploadProgress * 100)}%
+          </progress>
+        )}
         {formError && <p className="text-red-600">{formError}</p>}
         <button type="submit" disabled={submitting} className="rounded bg-black px-4 py-2 text-white disabled:opacity-50">
           {submitting ? "Sending…" : "Send"}
