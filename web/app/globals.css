@@ -1225,3 +1225,69 @@ textarea.input {
   margin: -6px 0 0;
   text-align: center;
 }
+
+/* Segmented choices (link duration) */
+.choice-field {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+.choice-field legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+.choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+}
+.choice {
+  position: relative;
+  cursor: pointer;
+}
+.choice input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  cursor: pointer;
+}
+.choice span {
+  display: block;
+  text-align: center;
+  padding: 9px 8px;
+  border-radius: 12px;
+  border: 1.5px solid #ead9f5;
+  background: #fffbff;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.choice:hover span {
+  border-color: #d6c0ee;
+}
+.choice input:checked + span {
+  border-color: var(--purple);
+  background: #f3e9ff;
+  color: var(--purple-deep);
+}
+.choice input:focus-visible + span {
+  outline: 3px solid rgba(139, 92, 246, 0.45);
+  outline-offset: 1px;
+}
+.invite-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.invite-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.invite-row-end {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}

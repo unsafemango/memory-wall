@@ -239,7 +239,7 @@ export default function ManageEventPage() {
               </section>
 
               <aside className="manage-side">
-                <Invitations eventID={event.id} eventTitle={event.title} onToast={toast.show} />
+                <Invitations eventID={event.id} eventTitle={event.title} eventDate={event.event_date} onToast={toast.show} />
                 <details className="panel settings">
                   <summary className="section-title">Event settings</summary>
                   <div style={{ marginTop: 16 }}>
