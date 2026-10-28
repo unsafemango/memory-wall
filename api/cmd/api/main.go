@@ -19,6 +19,11 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
+	siteURL := os.Getenv("SITE_URL")
+	if siteURL == "" {
+		siteURL = "http://localhost:3000"
+	}
+
 	db, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		log.Fatalf("connect to database: %v", err)
@@ -33,6 +38,7 @@ func main() {
 		Events:      store.NewEventStore(db),
 		Invitations: store.NewInvitationStore(db),
 		Submissions: store.NewSubmissionStore(db),
+		SiteURL:     siteURL,
 	})
 
 	log.Println("listening on :8080")
