@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/ai"
 	httpapi "github.com/unsafemango/memory-wall/internal/http"
+	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
 
@@ -42,11 +43,21 @@ func main() {
 		log.Println("ANTHROPIC_API_KEY is not set, the writing helper is turned off")
 	}
 
+	files := storage.New(storage.Config{
+		Endpoint:       os.Getenv("S3_ENDPOINT"),
+		PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
+		Region:         os.Getenv("S3_REGION"),
+		AccessKey:      os.Getenv("S3_ACCESS_KEY"),
+		SecretKey:      os.Getenv("S3_SECRET_KEY"),
+		Bucket:         os.Getenv("S3_BUCKET"),
+	})
+
 	server := httpapi.NewServer(httpapi.Deps{
 		Events:      store.NewEventStore(db),
 		Invitations: store.NewInvitationStore(db),
 		Submissions: store.NewSubmissionStore(db),
 		AI:          aiClient,
+		Storage:     files,
 		SiteURL:     siteURL,
 	})
 
