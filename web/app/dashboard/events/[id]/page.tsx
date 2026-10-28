@@ -11,6 +11,7 @@ import { Toast, useToast } from "../../../components/Toast";
 import { copyText } from "../../../components/copy";
 import { EventForm } from "../../EventForm";
 import { Invitations } from "./Invitations";
+import { ShareLink } from "./ShareLink";
 
 type Status = ModerationItem["status"];
 
@@ -227,7 +228,7 @@ export default function ManageEventPage() {
                 </div>
                 {shown.length === 0 ? (
                   <div className="panel empty">
-                    <p>{items.length === 0 ? "No memories yet. Send some invite links to get started." : activeTab.empty}</p>
+                    <p>{items.length === 0 ? "No memories yet. Share your invite link to get started." : activeTab.empty}</p>
                   </div>
                 ) : (
                   <ul className="submission-list">
@@ -239,7 +240,24 @@ export default function ManageEventPage() {
               </section>
 
               <aside className="manage-side">
-                <Invitations eventID={event.id} eventTitle={event.title} eventDate={event.event_date} onToast={toast.show} />
+                <ShareLink
+                  eventID={event.id}
+                  eventTitle={event.title}
+                  shareURL={event.share_url ?? ""}
+                  enabled={event.share_enabled ?? false}
+                  moderationEnabled={event.moderation_enabled}
+                  onChange={(shareURL, enabled) =>
+                    setEvent((prev) => (prev ? { ...prev, share_url: shareURL, share_enabled: enabled } : prev))
+                  }
+                  onToast={toast.show}
+                />
+                <Invitations
+                  eventID={event.id}
+                  eventTitle={event.title}
+                  eventSlug={event.slug}
+                  eventDate={event.event_date}
+                  onToast={toast.show}
+                />
                 <details className="panel settings">
                   <summary className="section-title">Event settings</summary>
                   <div style={{ marginTop: 16 }}>

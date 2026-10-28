@@ -24,6 +24,9 @@ export type OrganizerEvent = EventInfo & {
   // Only included in the dashboard's event list.
   pending_count?: number;
   approved_count?: number;
+  // The event's reusable link. Only the owner's endpoints include it.
+  share_url?: string;
+  share_enabled?: boolean;
 };
 
 export type ModerationItem = Memory & {
