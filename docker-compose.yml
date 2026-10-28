@@ -33,16 +33,34 @@ services:
     volumes:
       - minio_data:/bitnami/minio/data
 
+  # Applies any new migrations, then exits. The API waits for it.
+  migrate:
+    image: migrate/migrate:v4.18.3
+    volumes:
+      - ./api/migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://memorywall:devpassword@postgres:5432/memorywall?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build: ./api
     env_file: ./api/.env
     ports:
       - "8080:8080"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   web:
     build:
@@ -55,7 +73,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:
