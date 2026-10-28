@@ -21,6 +21,9 @@ export type Memory = {
 export type OrganizerEvent = EventInfo & {
   closing_message?: string;
   moderation_enabled: boolean;
+  // Only included in the dashboard's event list.
+  pending_count?: number;
+  approved_count?: number;
 };
 
 export type ModerationItem = Memory & {

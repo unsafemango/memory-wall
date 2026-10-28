@@ -979,3 +979,60 @@ textarea.input {
     transform: translate(-50%, 8px);
   }
 }
+
+/* Dashboard */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.event-grid {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+.event-grid > .event-card {
+  margin: 0;
+}
+.event-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.event-card-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.event-link {
+  align-self: flex-start;
+  max-width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--purple-deep);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-link:hover {
+  text-decoration: underline;
+}
+.event-card-actions {
+  margin-top: auto;
+}

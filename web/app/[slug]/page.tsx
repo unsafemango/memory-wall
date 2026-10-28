@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { formatDate } from "@/lib/format";
 import type { EventInfo, Memory } from "@/lib/types";
 import { Confetti } from "./Confetti";
 import { MemoryCard } from "./MemoryCard";
@@ -13,17 +14,6 @@ async function getMemories(slug: string): Promise<{ event: EventInfo; memories: 
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`memories request failed: ${res.status}`);
   return res.json();
-}
-
-function formatDate(isoDate: string) {
-  // Dates come as "2026-11-14"; noon UTC keeps the day the same in every timezone.
-  return new Date(`${isoDate}T12:00:00Z`).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
