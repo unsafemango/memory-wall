@@ -9,16 +9,22 @@ export function api(path: string, init: RequestInit = {}) {
   });
 }
 
-// errorMessage pulls a readable message out of a failed response.
-export async function errorMessage(res: Response): Promise<string> {
+// apiError reads the {"error": {"code", "message"}} body of a failed
+// response, falling back to the plain text.
+export async function apiError(res: Response): Promise<{ code: string; message: string }> {
   const text = await res.text();
   try {
     const body = JSON.parse(text);
-    if (body?.error?.message) return capitalize(body.error.message);
+    if (body?.error?.message) return { code: body.error.code ?? "", message: capitalize(body.error.message) };
   } catch {
     // Not JSON, use the plain text.
   }
-  return capitalize(text.trim()) || `Something went wrong (${res.status}).`;
+  return { code: "", message: capitalize(text.trim()) || `Something went wrong (${res.status}).` };
+}
+
+// errorMessage pulls a readable message out of a failed response.
+export async function errorMessage(res: Response): Promise<string> {
+  return (await apiError(res)).message;
 }
 
 // API messages are lowercase so they read well inside sentences; capitalize
