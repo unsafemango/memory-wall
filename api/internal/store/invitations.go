@@ -68,6 +68,35 @@ func (s *InvitationStore) Create(ctx context.Context, eventID, tokenHash, recipi
 	return id, err
 }
 
+// NewInvitation is one invitation to create in bulk.
+type NewInvitation struct {
+	TokenHash     string
+	RecipientName string
+}
+
+// CreateMany saves several invitations in one transaction, so either all of
+// them exist or none do. It returns their IDs in the same order.
+func (s *InvitationStore) CreateMany(ctx context.Context, eventID string, invitations []NewInvitation, expiresAt time.Time) ([]string, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	ids := make([]string, len(invitations))
+	for i, inv := range invitations {
+		err := tx.QueryRow(ctx,
+			`INSERT INTO invitations (event_id, token_hash, recipient_name, expires_at)
+			 VALUES ($1, $2, NULLIF($3, ''), $4) RETURNING id`,
+			eventID, inv.TokenHash, inv.RecipientName, expiresAt,
+		).Scan(&ids[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return ids, tx.Commit(ctx)
+}
+
 // ListForEvent returns an event's invitations, newest first. Tokens can't be
 // shown again since only their hashes are stored.
 func (s *InvitationStore) ListForEvent(ctx context.Context, eventID string) ([]Invitation, error) {

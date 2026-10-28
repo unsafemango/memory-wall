@@ -109,6 +109,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/events/{eventID}/submissions", s.listSubmissions)
 			r.Get("/events/{eventID}/invitations", s.listInvitations)
 			r.Post("/events/{eventID}/invitations", s.createInvitation)
+			r.Post("/events/{eventID}/invitations/bulk", s.createInvitations)
 			r.Post("/events/{eventID}/share-link", s.setShareLink)
 			r.Post("/events/{eventID}/share-link/reset", s.resetShareLink)
 			r.Post("/submissions/{id}/approve", s.approveSubmission)

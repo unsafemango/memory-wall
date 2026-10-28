@@ -136,6 +136,91 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// maxBulkInvitations caps one bulk request. Bigger lists can be sent in parts.
+const maxBulkInvitations = 200
+
+// createInvitations makes a personal link for each name in a list.
+func (s *Server) createInvitations(w http.ResponseWriter, r *http.Request) {
+	event, err := s.events.GetOwned(r.Context(), chi.URLParam(r, "eventID"), organizerIDFrom(r))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+
+	var input struct {
+		Names         []string `json:"names"`
+		ExpiresInDays int      `json:"expires_in_days"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		return
+	}
+
+	// Trim, drop blank lines, and skip repeats of the same name.
+	var names []string
+	seen := map[string]bool{}
+	for _, n := range input.Names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[strings.ToLower(n)] {
+			continue
+		}
+		if len(n) > 100 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "each name can be up to 100 characters")
+			return
+		}
+		seen[strings.ToLower(n)] = true
+		names = append(names, n)
+	}
+	if len(names) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "add at least one name")
+		return
+	}
+	if len(names) > maxBulkInvitations {
+		writeError(w, http.StatusBadRequest, "invalid_request", "you can make up to 200 links at a time")
+		return
+	}
+	if input.ExpiresInDays <= 0 {
+		input.ExpiresInDays = 30
+	}
+	if input.ExpiresInDays > 365 {
+		input.ExpiresInDays = 365
+	}
+
+	raws := make([]string, len(names))
+	news := make([]store.NewInvitation, len(names))
+	for i, name := range names {
+		raw, hash, err := auth.NewToken()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "could not generate tokens")
+			return
+		}
+		raws[i] = raw
+		news[i] = store.NewInvitation{TokenHash: hash, RecipientName: name}
+	}
+
+	expiresAt := time.Now().AddDate(0, 0, input.ExpiresInDays)
+	ids, err := s.invitations.CreateMany(r.Context(), event.ID, news, expiresAt)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not save invitations")
+		return
+	}
+
+	type created struct {
+		ID            string `json:"id"`
+		RecipientName string `json:"recipient_name"`
+		InviteURL     string `json:"invite_url"`
+	}
+	out := make([]created, len(names))
+	for i := range names {
+		out[i] = created{ID: ids[i], RecipientName: names[i], InviteURL: s.siteURL + "/invite/" + raws[i]}
+	}
+
+	// Like single invitations, this response is the only place the links appear.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(out)
+}
+
 func (s *Server) listInvitations(w http.ResponseWriter, r *http.Request) {
 	event, err := s.events.GetOwned(r.Context(), chi.URLParam(r, "eventID"), organizerIDFrom(r))
 	if err != nil {
