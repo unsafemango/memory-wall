@@ -935,6 +935,19 @@ textarea.input {
 .tab:focus-visible {
   outline: 3px solid rgba(139, 92, 246, 0.45);
 }
+@media (max-width: 520px) {
+  .tabs {
+    width: 100%;
+    flex-wrap: nowrap;
+    border-radius: 16px;
+  }
+  .tab {
+    flex: 1;
+    padding: 8px 6px;
+    font-size: 0.85rem;
+    border-radius: 12px;
+  }
+}
 
 /* Empty states */
 .empty {
@@ -1035,4 +1048,123 @@ textarea.input {
 }
 .event-card-actions {
   margin-top: auto;
+}
+
+/* Manage page */
+.share-bar {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.share-url {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+  color: var(--purple-deep);
+}
+.manage-grid {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 28px;
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .manage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.manage-main,
+.manage-side {
+  min-width: 0;
+}
+.manage-side > * + * {
+  margin-top: 20px;
+}
+.manage-main > .section-title {
+  margin-bottom: 12px;
+}
+.submission-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.submission {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.submission-media {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #f3e8ff;
+}
+.submission-message {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.submission-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.invite-result {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8f0ff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.invite-result p {
+  margin: 0;
+}
+.invite-link {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  color: var(--purple-deep);
+  user-select: all;
+}
+.invite-preview {
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+.list-title {
+  margin: 22px 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.invite-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.invite-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3eaf8;
+}
+.settings summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.settings summary::marker {
+  color: var(--purple);
 }

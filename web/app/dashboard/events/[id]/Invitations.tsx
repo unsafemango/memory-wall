@@ -2,21 +2,29 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
 import type { InvitationInfo } from "@/lib/types";
-import { buttonClass, inputClass, smallButtonClass } from "@/lib/ui";
+import { copyText } from "../../../components/copy";
 
-function statusText(inv: InvitationInfo) {
-  if (inv.used_at) return "Used";
-  if (inv.expires_at && new Date(inv.expires_at) < new Date()) return "Expired";
-  if (inv.expires_at) return `Expires ${new Date(inv.expires_at).toLocaleDateString()}`;
-  return "Open";
+function status(inv: InvitationInfo): { text: string; className: string } {
+  if (inv.used_at) return { text: "Used", className: "badge badge-good" };
+  if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { text: "Expired", className: "badge" };
+  if (inv.expires_at) {
+    return { text: `Open until ${new Date(inv.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`, className: "badge" };
+  }
+  return { text: "Open", className: "badge" };
 }
 
-export function Invitations({ eventID }: { eventID: string }) {
+type Props = {
+  eventID: string;
+  eventTitle: string;
+  onToast: (message: string) => void;
+};
+
+export function Invitations({ eventID, eventTitle, onToast }: Props) {
   const [invitations, setInvitations] = useState<InvitationInfo[]>([]);
   const [recipientName, setRecipientName] = useState("");
   const [expiresInDays, setExpiresInDays] = useState(30);
-  const [newLink, setNewLink] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [created, setCreated] = useState<{ link: string; name: string } | null>(null);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
@@ -32,68 +40,100 @@ export function Invitations({ eventID }: { eventID: string }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setCopied(false);
-    const res = await api(`/api/organizer/events/${eventID}/invitations`, {
-      method: "POST",
-      body: JSON.stringify({ recipient_name: recipientName, expires_in_days: expiresInDays }),
-    });
-    if (!res.ok) {
-      setError(await errorMessage(res));
-      return;
+    setCreating(true);
+    try {
+      const res = await api(`/api/organizer/events/${eventID}/invitations`, {
+        method: "POST",
+        body: JSON.stringify({ recipient_name: recipientName, expires_in_days: expiresInDays }),
+      });
+      if (!res.ok) {
+        setError(await errorMessage(res));
+        return;
+      }
+      const data = await res.json();
+      setCreated({ link: data.invite_url, name: recipientName.trim() });
+      setRecipientName("");
+      load();
+    } catch {
+      setError("We couldn't reach the server. Try again in a minute.");
+    } finally {
+      setCreating(false);
     }
-    const data = await res.json();
-    setNewLink(data.invite_url);
-    setRecipientName("");
-    load();
   }
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(newLink);
-      setCopied(true);
-    } catch {
-      // Clipboard access can be blocked; the link is still selectable below.
-    }
+  const message = created
+    ? `Hi${created.name ? ` ${created.name}` : ""}! I'm collecting memories for ${eventTitle}. ` +
+      `Could you leave a note, photo, or video? It only takes a minute: ${created.link}`
+    : "";
+
+  async function copy(text: string, label: string) {
+    onToast((await copyText(text)) ? `${label} copied` : "Couldn't copy, select the text instead");
   }
 
   return (
-    <section className="mb-8">
-      <h2 className="mb-2 text-lg font-semibold">Invite someone</h2>
-      <p className="mb-3 text-sm opacity-70">Each link works once, so make one per person and send it to them yourself.</p>
-      <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-1 flex-col gap-1">
-          Their name
-          <input className={inputClass} value={recipientName} onChange={(e) => setRecipientName(e.target.value)} placeholder="Optional" maxLength={100} />
+    <section className="panel">
+      <h2 className="section-title">Invite people</h2>
+      <p className="section-sub">Make a link for each person and send it to them. Each link works once.</p>
+
+      <form onSubmit={handleSubmit} className="form">
+        <label className="field">
+          <span className="field-name">Who is it for?</span>
+          <input
+            className="input"
+            value={recipientName}
+            onChange={(e) => setRecipientName(e.target.value)}
+            placeholder="Their name (optional)"
+            maxLength={100}
+          />
         </label>
-        <label className="flex flex-col gap-1">
-          Expires in
-          <select className={inputClass} value={expiresInDays} onChange={(e) => setExpiresInDays(Number(e.target.value))}>
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
+        <label className="field">
+          <span className="field-name">Link stays open for</span>
+          <select className="input" value={expiresInDays} onChange={(e) => setExpiresInDays(Number(e.target.value))}>
+            <option value={7}>1 week</option>
+            <option value={30}>1 month</option>
+            <option value={90}>3 months</option>
           </select>
         </label>
-        <button type="submit" className={buttonClass}>Create link</button>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button type="submit" disabled={creating} className="btn btn-primary">
+          {creating ? "Creating…" : "Create invite link"}
+        </button>
       </form>
-      {error && <p className="mt-2 text-red-600">{error}</p>}
-      {newLink && (
-        <div className="mt-3 rounded border border-black/20 p-3 dark:border-white/30">
-          <p className="mb-1 text-sm">Copy this link now. It won&apos;t be shown again.</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 break-all select-all">{newLink}</code>
-            <button type="button" className={smallButtonClass} onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+
+      {created && (
+        <div className="invite-result">
+          <p className="field-name">
+            {created.name ? `Link for ${created.name} is ready` : "Your link is ready"}
+          </p>
+          <p className="field-hint">Copy it now. For privacy, it can&apos;t be shown again.</p>
+          <code className="invite-link">{created.link}</code>
+          <div className="row">
+            <button type="button" className="btn btn-primary btn-small" onClick={() => copy(message, "Message")}>
+              Copy message
+            </button>
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => copy(created.link, "Link")}>
+              Copy link only
+            </button>
           </div>
+          <p className="field-hint invite-preview">&ldquo;{message}&rdquo;</p>
         </div>
       )}
+
       {invitations.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-1 text-sm">
-          {invitations.map((inv) => (
-            <li key={inv.id} className="flex justify-between gap-2 border-b border-black/10 py-1 dark:border-white/10">
-              <span>{inv.recipient_name || "Unnamed invitation"}</span>
-              <span className="opacity-70">{statusText(inv)}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <h3 className="list-title">Sent ({invitations.length})</h3>
+          <ul className="invite-list">
+            {invitations.map((inv) => {
+              const st = status(inv);
+              return (
+                <li key={inv.id}>
+                  <span>{inv.recipient_name || "Unnamed guest"}</span>
+                  <span className={st.className}>{st.text}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </section>
   );
