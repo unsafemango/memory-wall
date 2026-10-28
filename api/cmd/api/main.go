@@ -15,6 +15,7 @@ import (
 	"github.com/unsafemango/memory-wall/internal/auth"
 	httpapi "github.com/unsafemango/memory-wall/internal/http"
 	"github.com/unsafemango/memory-wall/internal/jobs"
+	"github.com/unsafemango/memory-wall/internal/live"
 	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
@@ -73,6 +74,10 @@ func main() {
 		Bucket:         os.Getenv("S3_BUCKET"),
 	})
 
+	// Database change notifications, passed on to open pages as they happen.
+	hub := live.NewHub()
+	go live.Listen(ctx, db, hub, logger)
+
 	server := httpapi.NewServer(httpapi.Deps{
 		Organizers:  store.NewOrganizerStore(db),
 		Sessions:    store.NewSessionStore(db),
@@ -85,6 +90,7 @@ func main() {
 		TrustProxy:  os.Getenv("TRUST_PROXY_HEADERS") == "true",
 		Logger:      logger,
 		LinkSealer:  linkSealer,
+		Hub:         hub,
 	})
 
 	// The job worker runs alongside the HTTP server for the life of the program.
@@ -97,6 +103,7 @@ func main() {
 	}()
 
 	srv := &http.Server{Addr: ":8080", Handler: server.Routes()}
+	srv.RegisterOnShutdown(server.StopStreams)
 	go func() {
 		logger.Info("listening", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

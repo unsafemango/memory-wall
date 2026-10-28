@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/unsafemango/memory-wall/internal/ai"
 	"github.com/unsafemango/memory-wall/internal/auth"
+	"github.com/unsafemango/memory-wall/internal/live"
 	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
@@ -28,6 +30,10 @@ type Server struct {
 	trustProxy  bool
 	logger      *slog.Logger
 	sealer      *auth.Sealer
+	hub         *live.Hub
+	// streamsDone is closed on shutdown to end open live update streams.
+	streamsDone chan struct{}
+	stopOnce    sync.Once
 }
 
 // Deps lists what NewServer needs. main.go fills it in once at startup.
@@ -51,6 +57,9 @@ type Deps struct {
 	// LinkSealer encrypts personal invitation links so organizers can copy
 	// them again. Without it, links can only be copied when they're made.
 	LinkSealer *auth.Sealer
+	// Hub passes database change notifications to open pages. Without it,
+	// the live update streams answer 503.
+	Hub *live.Hub
 }
 
 func NewServer(d Deps) *Server {
@@ -69,7 +78,15 @@ func NewServer(d Deps) *Server {
 		trustProxy:  d.TrustProxy,
 		logger:      d.Logger,
 		sealer:      d.LinkSealer,
+		hub:         d.Hub,
+		streamsDone: make(chan struct{}),
 	}
+}
+
+// StopStreams ends every open live update stream. Call it when the server is
+// shutting down, since streams otherwise stay open indefinitely.
+func (s *Server) StopStreams() {
+	s.stopOnce.Do(func() { close(s.streamsDone) })
 }
 
 // Routes builds the router with every endpoint registered.
@@ -90,6 +107,7 @@ func (s *Server) Routes() http.Handler {
 
 	r.Get("/api/healthz", healthz)
 	r.Get("/api/events/{slug}/memories", s.getMemories)
+	r.Get("/api/events/{slug}/stream", s.streamPublicChanges)
 
 	r.Route("/api/invitations/{token}", func(r chi.Router) {
 		r.Use(guestIPLimit, guestTokenLimit)
@@ -113,6 +131,7 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/events/{eventID}", s.getMyEvent)
 			r.Patch("/events/{eventID}", s.updateEvent)
 			r.Get("/events/{eventID}/submissions", s.listSubmissions)
+			r.Get("/events/{eventID}/stream", s.streamOrganizerChanges)
 			r.Get("/events/{eventID}/invitations", s.listInvitations)
 			r.Post("/events/{eventID}/invitations", s.createInvitation)
 			r.Post("/events/{eventID}/invitations/bulk", s.createInvitations)
