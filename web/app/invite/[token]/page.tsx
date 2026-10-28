@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { errorMessage } from "@/lib/api";
 import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
@@ -7,6 +7,10 @@ import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 type Invitation = { id: string; event_id: string; recipient_name: string };
+
+function formatSize(bytes: number) {
+  return bytes >= 1 << 20 ? `${(bytes / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
@@ -23,6 +27,18 @@ export default function InvitePage() {
   const [suggestionError, setSuggestionError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // A local preview of the chosen photo, released when the file changes.
+  const previewURL = useMemo(() => (file?.type.startsWith("image/") ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => {
+    if (previewURL) URL.revokeObjectURL(previewURL);
+  }, [previewURL]);
+
+  function clearFile() {
+    setFile(null);
+    if (fileInput.current) fileInput.current.value = "";
+  }
 
   // Check the link first, so a bad link fails before anyone writes a message.
   useEffect(() => {
@@ -165,10 +181,36 @@ export default function InvitePage() {
               placeholder={file ? "Optional: add a caption" : undefined}
             />
           </label>
-          <label>
-            Add a photo or video (optional)
-            <input type="file" accept={ACCEPTED_FILE_TYPES} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          </label>
+          <div className="file-field">
+            <span className="field-label" id="file-label">Add a photo or video (optional)</span>
+            <label className={file ? "file-picker has-file" : "file-picker"}>
+              <input
+                ref={fileInput}
+                type="file"
+                className="visually-hidden"
+                accept={ACCEPTED_FILE_TYPES}
+                aria-labelledby="file-label"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              {previewURL ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="file-preview" src={previewURL} alt="" />
+              ) : (
+                <span className="file-icon" aria-hidden="true">+</span>
+              )}
+              <span className="file-text">
+                <span className="file-name">{file ? file.name : "Choose a photo or video"}</span>
+                <span className="file-hint">
+                  {file ? formatSize(file.size) : "Photos up to 15 MB, videos up to 100 MB"}
+                </span>
+              </span>
+            </label>
+            {file && (
+              <button type="button" className="file-remove" onClick={clearFile}>
+                Remove
+              </button>
+            )}
+          </div>
           {uploadProgress !== null && (
             <progress value={uploadProgress} max={1}>
               {Math.round(uploadProgress * 100)}%

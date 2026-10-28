@@ -362,9 +362,92 @@ h3 {
   outline: 3px solid rgba(139, 92, 246, 0.45);
   outline-offset: 1px;
 }
-.invite-form input[type="file"] {
+/* File picker: the real input is hidden, the label is the button. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.file-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-weight: 600;
+}
+.invite-form .file-picker {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1.5px dashed var(--purple);
+  border-radius: 16px;
+  background: #fbf7ff;
+  cursor: pointer;
   font-weight: 500;
-  max-width: 100%;
+}
+.invite-form .file-picker:hover {
+  background: #f4ebff;
+}
+.invite-form .file-picker.has-file {
+  border-style: solid;
+  border-color: #ead9f5;
+  background: #fff;
+}
+.file-picker:focus-within {
+  outline: 3px solid rgba(139, 92, 246, 0.45);
+  outline-offset: 1px;
+}
+.file-icon,
+.file-preview {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+}
+.file-icon {
+  display: grid;
+  place-items: center;
+  font-size: 1.8rem;
+  font-weight: 500;
+  line-height: 1;
+  color: #fff;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+}
+.file-preview {
+  object-fit: cover;
+}
+.file-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.file-name {
+  font-weight: 600;
+  color: var(--purple-deep);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-hint {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.file-remove {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--pink-deep);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: underline;
 }
 .invite-form progress {
   width: 100%;
