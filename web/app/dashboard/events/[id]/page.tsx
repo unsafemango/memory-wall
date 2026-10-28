@@ -1,10 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { api, errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { ModerationItem, OrganizerEvent } from "@/lib/types";
+import { useLiveChanges } from "@/lib/useLiveChanges";
 import { useOrigin } from "@/lib/useOrigin";
 import { AppHeader } from "../../../components/AppHeader";
 import { Toast, useToast } from "../../../components/Toast";
@@ -134,6 +135,28 @@ export default function ManageEventPage() {
 
   useEffect(load, [load]);
 
+  // New memories and changes made elsewhere (another tab, another device)
+  // show up without a reload.
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  const showToast = toast.show;
+  const onLiveChange = useCallback(() => {
+    api(`/api/organizer/events/${id}/submissions`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const fresh: ModerationItem[] = await res.json();
+        const known = new Set(itemsRef.current.map((it) => it.id));
+        const added = fresh.filter((it) => !known.has(it.id) && it.status === "pending");
+        setItems(fresh);
+        if (added.length === 1) showToast(`New memory from ${added[0].sender_name}`);
+        else if (added.length > 1) showToast(`${added.length} new memories to review`);
+      })
+      .catch(() => {});
+  }, [id, showToast]);
+  const live = useLiveChanges(event ? `/api/organizer/events/${id}/stream` : null, onLiveChange);
+
   async function act(itemID: string, action: "approve" | "reject" | "delete") {
     const res =
       action === "delete"
@@ -205,7 +228,12 @@ export default function ManageEventPage() {
 
             <div className="manage-grid">
               <section className="manage-main">
-                <h2 className="section-title">Memories</h2>
+                <div className="section-head">
+                  <h2 className="section-title">Memories</h2>
+                  <span className={live ? "live-dot on" : "live-dot"} title={live ? "New memories show up here automatically" : "Reconnecting…"}>
+                    {live ? "Live" : "Reconnecting…"}
+                  </span>
+                </div>
                 {!event.moderation_enabled && (
                   <p className="notice" style={{ marginBottom: 16 }}>
                     Review is off, so new memories go on the page straight away. You can still hide or delete
