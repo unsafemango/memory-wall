@@ -11,4 +11,6 @@ export type Memory = {
   type: "note" | "photo" | "video";
   message: string;
   created_at: string;
+  mime_type?: string;
+  media_url?: string;
 };

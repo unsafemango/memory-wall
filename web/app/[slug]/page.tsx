@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { EventInfo, Memory } from "@/lib/types";
+import { MemoryCard } from "./MemoryCard";
 
 // Server-side requests can use a different address than the browser does,
 // e.g. http://api:8080 inside Docker.
@@ -22,10 +23,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
       <h1 className="mb-6 text-3xl font-semibold">{data.event.title}</h1>
       <div className="flex flex-col gap-4">
         {data.memories.map((m) => (
-          <div key={m.id} className="rounded border p-4">
-            <p className="font-medium">{m.sender_name}</p>
-            <p className="whitespace-pre-wrap">{m.message}</p>
-          </div>
+          <MemoryCard key={m.id} memory={m} />
         ))}
       </div>
     </main>
