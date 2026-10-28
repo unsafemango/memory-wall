@@ -52,13 +52,25 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	event, err := s.events.GetByID(r.Context(), invitation.EventID)
+	if err != nil {
+		http.Error(w, "could not look up event", http.StatusInternalServerError)
+		return
+	}
+
+	// With moderation on, nothing is public until the organizer approves it.
+	status := "approved"
+	if event.ModerationEnabled {
+		status = "pending"
+	}
+
 	sub := store.Submission{
 		EventID:      invitation.EventID,
 		InvitationID: invitation.ID,
 		SenderName:   input.SenderName,
 		Type:         "note",
 		Message:      input.Message,
-		Status:       "approved",
+		Status:       status,
 	}
 
 	if !hasMedia {
