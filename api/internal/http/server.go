@@ -3,8 +3,10 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/unsafemango/memory-wall/internal/ai"
 	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
@@ -21,6 +23,7 @@ type Server struct {
 	ai          *ai.Client
 	storage     *storage.Storage
 	siteURL     string
+	trustProxy  bool
 }
 
 // Deps lists what NewServer needs. main.go fills it in once at startup.
@@ -37,6 +40,9 @@ type Deps struct {
 	// SiteURL is the web app's origin, e.g. http://localhost:3000. It's the
 	// only origin the browser is allowed to call the API from.
 	SiteURL string
+	// TrustProxy reads the client IP from X-Forwarded-For. Only turn it on
+	// behind a proxy you control, since clients can set that header.
+	TrustProxy bool
 }
 
 func NewServer(d Deps) *Server {
@@ -49,20 +55,41 @@ func NewServer(d Deps) *Server {
 		ai:          d.AI,
 		storage:     d.Storage,
 		siteURL:     d.SiteURL,
+		trustProxy:  d.TrustProxy,
 	}
 }
 
 // Routes builds the router with every endpoint registered.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
+	if s.trustProxy {
+		r.Use(middleware.RealIP)
+	}
 	r.Use(s.corsMiddleware)
 
+	// Login and signup are what attackers hammer to guess passwords.
+	authLimit := limitByIP(newKeyedLimiter(12*time.Second, 5))
+	// Guests: a generous per-IP limit, plus a tighter one per invitation link.
+	guestIPLimit := limitByIP(newKeyedLimiter(2*time.Second, 20))
+	guestTokenLimit := limitByToken(newKeyedLimiter(6*time.Second, 10))
+	// Each writing suggestion is a paid model call.
+	suggestLimit := limitByToken(newKeyedLimiter(20*time.Second, 5))
+
 	r.Get("/api/healthz", healthz)
+	r.Get("/api/events/{slug}/memories", s.getMemories)
+
+	r.Route("/api/invitations/{token}", func(r chi.Router) {
+		r.Use(guestIPLimit, guestTokenLimit)
+		r.Get("/", s.getInvitation)
+		r.Post("/submissions", s.createSubmission)
+		r.Post("/uploads", s.createUploadURL)
+		r.With(suggestLimit).Post("/suggest-message", s.suggestMessage)
+	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.sameOriginWrites)
-		r.Post("/api/auth/signup", s.signup)
-		r.Post("/api/auth/login", s.login)
+		r.With(authLimit).Post("/api/auth/signup", s.signup)
+		r.With(authLimit).Post("/api/auth/login", s.login)
 		r.Post("/api/auth/logout", s.logout)
 
 		r.Route("/api/organizer", func(r chi.Router) {
@@ -80,12 +107,6 @@ func (s *Server) Routes() http.Handler {
 			r.Delete("/submissions/{id}", s.deleteSubmission)
 		})
 	})
-
-	r.Get("/api/invitations/{token}", s.getInvitation)
-	r.Post("/api/invitations/{token}/submissions", s.createSubmission)
-	r.Post("/api/invitations/{token}/suggest-message", s.suggestMessage)
-	r.Post("/api/invitations/{token}/uploads", s.createUploadURL)
-	r.Get("/api/events/{slug}/memories", s.getMemories)
 
 	return r
 }

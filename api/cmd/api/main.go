@@ -61,6 +61,7 @@ func main() {
 		AI:          aiClient,
 		Storage:     files,
 		SiteURL:     siteURL,
+		TrustProxy:  os.Getenv("TRUST_PROXY_HEADERS") == "true",
 	})
 
 	log.Println("listening on :8080")
