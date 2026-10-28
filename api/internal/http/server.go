@@ -73,6 +73,8 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/events/{eventID}", s.getMyEvent)
 			r.Patch("/events/{eventID}", s.updateEvent)
 			r.Get("/events/{eventID}/submissions", s.listSubmissions)
+			r.Get("/events/{eventID}/invitations", s.listInvitations)
+			r.Post("/events/{eventID}/invitations", s.createInvitation)
 			r.Post("/submissions/{id}/approve", s.approveSubmission)
 			r.Post("/submissions/{id}/reject", s.rejectSubmission)
 			r.Delete("/submissions/{id}", s.deleteSubmission)

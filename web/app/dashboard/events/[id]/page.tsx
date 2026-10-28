@@ -6,6 +6,7 @@ import { api, errorMessage } from "@/lib/api";
 import type { ModerationItem, OrganizerEvent } from "@/lib/types";
 import { smallButtonClass } from "@/lib/ui";
 import { EventForm } from "../../EventForm";
+import { Invitations } from "./Invitations";
 
 const STATUSES = ["pending", "approved", "rejected"] as const;
 
@@ -82,6 +83,8 @@ export default function ManageEventPage() {
         <h1 className="text-2xl font-semibold">{event.title}</h1>
         <Link className={smallButtonClass} href={`/${event.slug}`}>View page</Link>
       </div>
+
+      <Invitations eventID={event.id} />
 
       <h2 className="mb-2 text-lg font-semibold">Submissions</h2>
       <div className="mb-3 flex gap-2" role="tablist">

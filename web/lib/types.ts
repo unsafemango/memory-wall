@@ -30,3 +30,10 @@ export type Organizer = {
   email: string;
   display_name: string;
 };
+
+export type InvitationInfo = {
+  id: string;
+  recipient_name: string;
+  expires_at?: string;
+  used_at?: string;
+};
