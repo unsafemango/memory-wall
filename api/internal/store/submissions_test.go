@@ -20,7 +20,9 @@ func TestSubmissionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer db.Close()
+	// t.Cleanup, not defer: cleanups run after the test returns, so a deferred
+	// Close would shut the pool before the row cleanup below could run.
+	t.Cleanup(db.Close)
 
 	// Find the seeded event. The test leaves InvitationID empty so it doesn't
 	// use up the seeded invitation.
@@ -44,7 +46,9 @@ func TestSubmissionRoundTrip(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	t.Cleanup(func() {
-		db.Exec(context.Background(), `DELETE FROM submissions WHERE id = $1`, id)
+		if _, err := db.Exec(context.Background(), `DELETE FROM submissions WHERE id = $1`, id); err != nil {
+			t.Errorf("clean up test submission: %v", err)
+		}
 	})
 
 	got, err := submissions.GetByID(ctx, id)
