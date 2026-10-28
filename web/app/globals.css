@@ -155,17 +155,28 @@ h3 {
 }
 
 .note-card {
+  --accent: var(--pink);
+  position: relative;
+  overflow: hidden;
   border-radius: 20px;
-  padding: 22px 22px 18px;
+  padding: 26px 22px 18px;
   background: #fff;
   box-shadow: 0 10px 30px -18px rgba(59, 29, 74, 0.45);
-  border-top: 6px solid var(--pink);
+}
+/* A straight colour strip clipped by the card's rounded corners. A
+   border-top would curve down the sides along the radius instead. */
+.note-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 6px;
+  background: var(--accent);
 }
 .timeline > .note-card:nth-child(3n + 2) {
-  border-top-color: var(--purple);
+  --accent: var(--purple);
 }
 .timeline > .note-card:nth-child(3n) {
-  border-top-color: var(--orange);
+  --accent: var(--orange);
 }
 .note-card .msg {
   margin: 0 0 14px;
