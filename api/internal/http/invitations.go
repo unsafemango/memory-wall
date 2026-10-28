@@ -103,7 +103,8 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expiresAt := time.Now().AddDate(0, 0, input.ExpiresInDays)
-	if err := s.invitations.Create(r.Context(), event.ID, hash, input.RecipientName, expiresAt); err != nil {
+	id, err := s.invitations.Create(r.Context(), event.ID, hash, input.RecipientName, expiresAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not save invitation")
 		return
 	}
@@ -112,6 +113,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
+		"id":         id,
 		"invite_url": s.siteURL + "/invite/" + raw,
 	})
 }

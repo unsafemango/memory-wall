@@ -83,12 +83,9 @@ func createInvitation(t *testing.T, db *pgxpool.Pool, eventID, raw string, expir
 	invitations := NewInvitationStore(db)
 	// Hashing here mirrors auth.HashToken; store tests don't import auth.
 	hash := sha256Hex(raw)
-	if err := invitations.Create(ctx, eventID, hash, "Guest", expiresAt); err != nil {
+	id, err := invitations.Create(ctx, eventID, hash, "Guest", expiresAt)
+	if err != nil {
 		t.Fatalf("create invitation: %v", err)
 	}
-	inv, err := invitations.GetByTokenHash(ctx, hash)
-	if err != nil {
-		t.Fatalf("look up invitation: %v", err)
-	}
-	return inv.ID
+	return id
 }

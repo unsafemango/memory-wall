@@ -41,13 +41,15 @@ func (s *InvitationStore) GetByTokenHash(ctx context.Context, tokenHash string) 
 	return inv, err
 }
 
-func (s *InvitationStore) Create(ctx context.Context, eventID, tokenHash, recipientName string, expiresAt time.Time) error {
-	_, err := s.db.Exec(ctx,
+// Create saves a new invitation and returns its ID.
+func (s *InvitationStore) Create(ctx context.Context, eventID, tokenHash, recipientName string, expiresAt time.Time) (string, error) {
+	var id string
+	err := s.db.QueryRow(ctx,
 		`INSERT INTO invitations (event_id, token_hash, recipient_name, expires_at)
-		 VALUES ($1, $2, NULLIF($3, ''), $4)`,
+		 VALUES ($1, $2, NULLIF($3, ''), $4) RETURNING id`,
 		eventID, tokenHash, recipientName, expiresAt,
-	)
-	return err
+	).Scan(&id)
+	return id, err
 }
 
 // ListForEvent returns an event's invitations, newest first. Tokens can't be

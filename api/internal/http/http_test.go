@@ -134,7 +134,7 @@ func TestSubmitNoteThroughInvitation(t *testing.T) {
 		t.Fatalf("create event: %v", err)
 	}
 	invitations := store.NewInvitationStore(db)
-	if err := invitations.Create(ctx, eventID, hash, "Guest", time.Now().Add(time.Hour)); err != nil {
+	if _, err := invitations.Create(ctx, eventID, hash, "Guest", time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("create invitation: %v", err)
 	}
 
