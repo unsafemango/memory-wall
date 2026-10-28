@@ -125,3 +125,11 @@ func (s *Storage) Upload(ctx context.Context, key, contentType string, body io.R
 	})
 	return err
 }
+
+func (s *Storage) Delete(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
