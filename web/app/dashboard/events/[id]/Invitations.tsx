@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
 import type { InvitationInfo } from "@/lib/types";
 import { copyText } from "../../../components/copy";
-import { inviteMessage, readSavedLinks, saveLinks } from "./invites";
+import { inviteMessage } from "./invites";
 
 const DAY = 24 * 60 * 60 * 1000;
 const MAX_NAMES = 200;
@@ -74,7 +74,7 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
   const options = useMemo(() => durations(now, eventDate), [now, eventDate]);
   const [mode, setMode] = useState<"one" | "list">("one");
   const [invitations, setInvitations] = useState<InvitationInfo[]>([]);
-  const [savedLinks, setSavedLinks] = useState<Record<string, string>>({});
+  const [openID, setOpenID] = useState<string | null>(null);
   const [recipientName, setRecipientName] = useState("");
   const [namesText, setNamesText] = useState("");
   const [durationKey, setDurationKey] = useState("month");
@@ -89,10 +89,7 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
   const load = useCallback(() => {
     api(`/api/organizer/events/${eventID}/invitations`)
       .then(async (res) => {
-        if (res.ok) {
-          setInvitations(await res.json());
-          setSavedLinks(readSavedLinks(eventID));
-        }
+        if (res.ok) setInvitations(await res.json());
       })
       .catch(() => setError("We couldn't load invitations."));
   }, [eventID]);
@@ -140,7 +137,6 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
         links = data.map((d) => ({ id: d.id, name: d.recipient_name, link: d.invite_url }));
         setNamesText("");
       }
-      saveLinks(eventID, Object.fromEntries(links.map((l) => [l.id, l.link])));
       setCreated(links);
       load();
     } catch {
@@ -318,30 +314,59 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
           <ul className="invite-list">
             {invitations.map((inv) => {
               const st = status(inv);
-              const link = !inv.used_at ? savedLinks[inv.id] : undefined;
+              const name = inv.recipient_name || "Unnamed guest";
+              const open = openID === inv.id;
               return (
-                <li key={inv.id}>
-                  <span className="invite-name">{inv.recipient_name || "Unnamed guest"}</span>
-                  <span className="invite-row-end">
-                    <span className={st.className}>{st.text}</span>
-                    {link && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-small"
-                        onClick={() => copy(inviteMessage(eventTitle, link, inv.recipient_name), "Message")}
-                        title="Copy the invite message again"
-                      >
-                        Copy
-                      </button>
-                    )}
-                  </span>
+                <li key={inv.id} className={open ? "invite-row open" : "invite-row"}>
+                  <button
+                    type="button"
+                    className="invite-row-toggle"
+                    aria-expanded={open}
+                    onClick={() => setOpenID(open ? null : inv.id)}
+                  >
+                    <span className="invite-name">{name}</span>
+                    <span className="invite-row-end">
+                      <span className={st.className}>{st.text}</span>
+                      <span className="chevron" aria-hidden="true">›</span>
+                    </span>
+                  </button>
+                  {open && (
+                    <div className="invite-row-detail">
+                      {inv.invite_url ? (
+                        <>
+                          <code className="invite-link">{inv.invite_url}</code>
+                          <div className="row">
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-small"
+                              onClick={() => copy(inviteMessage(eventTitle, inv.invite_url!, inv.recipient_name), "Message")}
+                            >
+                              Copy message
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-small"
+                              onClick={() => copy(inv.invite_url!, "Link")}
+                            >
+                              Copy link
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="field-hint">
+                          {inv.used_at
+                            ? `${name} already left a memory with this link.`
+                            : st.text === "Expired"
+                              ? `This link has expired. Make a new one above if ${name} still wants to post.`
+                              : "This link was made before links were saved, so it can't be shown again. Make a new one above."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}
           </ul>
-          <p className="field-hint" style={{ marginTop: 10 }}>
-            Links you make here can be copied again until you close this tab. After that, make a new one.
-          </p>
         </details>
       )}
     </section>

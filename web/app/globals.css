@@ -1411,3 +1411,49 @@ textarea.input {
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* Sent personal links: click a name to see its link */
+.invite-list .invite-row {
+  display: block;
+  padding: 0;
+}
+.invite-row-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.invite-row-toggle:hover {
+  background: #faf5ff;
+}
+.invite-row-toggle:focus-visible {
+  outline: 3px solid rgba(139, 92, 246, 0.45);
+}
+.chevron {
+  display: inline-block;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--ink-soft);
+  transition: transform 0.15s ease;
+}
+.invite-row.open .chevron {
+  transform: rotate(90deg);
+}
+.invite-row-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 4px 14px;
+}
+.invite-row-detail .field-hint {
+  margin: 0;
+}

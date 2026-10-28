@@ -44,4 +44,6 @@ export type InvitationInfo = {
   recipient_name: string;
   expires_at?: string;
   used_at?: string;
+  // Present while the link can still be used.
+  invite_url?: string;
 };
