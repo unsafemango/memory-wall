@@ -12,6 +12,8 @@ const MAX_MESSAGE = 5000;
 type Invitation = {
   id: string;
   recipient_name: string;
+  // True for the event's share link, which anyone can use more than once.
+  shared: boolean;
   event: { title: string; slug: string; event_date?: string; moderation_enabled: boolean };
 };
 
@@ -24,6 +26,11 @@ function linkProblem(code: string): LinkProblem {
       return {
         title: "This link has already been used",
         body: "Each invite link works once. If you'd like to add something else, ask the person who sent it for a new link.",
+      };
+    case "share_link_off":
+      return {
+        title: "This link has been turned off",
+        body: "The organizer isn't taking new memories through this link right now. Ask them if there's a new one.",
       };
     case "invitation_expired":
       return {
@@ -116,6 +123,16 @@ export default function InvitePage() {
     messageBox.current?.focus();
   }
 
+  // Share links can be used again, so a guest can leave a second memory.
+  function startAnother() {
+    setMessage("");
+    clearFile();
+    setSuggestions([]);
+    setDetail("");
+    setFormError("");
+    setSubmitted(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!message.trim() && !file) {
@@ -183,7 +200,14 @@ export default function InvitePage() {
               ? `Your memory for ${event.title} has been sent. It'll appear on the page once it's been approved.`
               : `Your memory is now on the page for ${event.title}.`}
           </p>
-          <Link className="wall-button" href={`/${event.slug}`}>See the page</Link>
+          <div className="hero-actions">
+            <Link className="wall-button" href={`/${event.slug}`}>See the page</Link>
+            {invitation.shared && (
+              <button type="button" className="wall-link link-button" onClick={startAnother}>
+                Add another memory
+              </button>
+            )}
+          </div>
         </section>
       </main>
     );
