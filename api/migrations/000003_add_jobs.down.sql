@@ -1,0 +1,3 @@
+ALTER TABLE media DROP COLUMN IF EXISTS thumbnail_key;
+
+DROP TABLE IF EXISTS jobs;

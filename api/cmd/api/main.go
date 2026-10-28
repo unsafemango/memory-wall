@@ -2,19 +2,27 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/ai"
 	httpapi "github.com/unsafemango/memory-wall/internal/http"
+	"github.com/unsafemango/memory-wall/internal/jobs"
 	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
 
 func main() {
-	ctx := context.Background()
+	// ctx is cancelled on Ctrl-C or when Docker stops the container.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -64,8 +72,28 @@ func main() {
 		TrustProxy:  os.Getenv("TRUST_PROXY_HEADERS") == "true",
 	})
 
-	log.Println("listening on :8080")
-	if err := http.ListenAndServe(":8080", server.Routes()); err != nil {
-		log.Fatal(err)
+	// The job worker runs alongside the HTTP server for the life of the program.
+	worker := jobs.NewWorker(jobs.NewStore(db), slog.Default())
+	workerDone := make(chan struct{})
+	go func() {
+		worker.Run(ctx)
+		close(workerDone)
+	}()
+
+	srv := &http.Server{Addr: ":8080", Handler: server.Routes()}
+	go func() {
+		log.Println("listening on :8080")
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
 	}
+	<-workerDone
 }
