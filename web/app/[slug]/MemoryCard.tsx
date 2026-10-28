@@ -13,7 +13,14 @@ export function MemoryCard({ memory }: { memory: Memory }) {
   return (
     <article className="polaroid">
       {memory.type === "video" ? (
-        <video className="thumb" src={memory.media_url} controls playsInline preload="metadata" />
+        <video
+          className="thumb"
+          src={memory.media_url}
+          poster={memory.thumbnail_url}
+          controls
+          playsInline
+          preload="metadata"
+        />
       ) : (
         // Signed bucket URLs change on every request, so next/image's optimizer can't cache them.
         // eslint-disable-next-line @next/next/no-img-element

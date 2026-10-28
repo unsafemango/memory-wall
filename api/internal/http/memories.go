@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/unsafemango/memory-wall/internal/store"
 )
 
 func (s *Server) getMemories(w http.ResponseWriter, r *http.Request) {
@@ -29,19 +31,30 @@ func (s *Server) getMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The bucket is private, so each file gets a signed link that expires.
 	for i := range memories {
-		if memories[i].StorageKey == "" {
-			continue
-		}
-		url, err := s.storage.PresignGet(r.Context(), memories[i].StorageKey, time.Hour)
-		if err != nil {
+		if err := s.signMediaURLs(r.Context(), &memories[i]); err != nil {
 			http.Error(w, "could not load memories", http.StatusInternalServerError)
 			return
 		}
-		memories[i].MediaURL = url
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"event": event, "memories": memories})
+}
+
+// signMediaURLs fills in temporary links for a memory's file and thumbnail.
+// The bucket is private, so each link is signed and expires after an hour.
+func (s *Server) signMediaURLs(ctx context.Context, m *store.Memory) error {
+	var err error
+	if m.StorageKey != "" {
+		if m.MediaURL, err = s.storage.PresignGet(ctx, m.StorageKey, time.Hour); err != nil {
+			return err
+		}
+	}
+	if m.ThumbnailKey != "" {
+		if m.ThumbnailURL, err = s.storage.PresignGet(ctx, m.ThumbnailKey, time.Hour); err != nil {
+			return err
+		}
+	}
+	return nil
 }

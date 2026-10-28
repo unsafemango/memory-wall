@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/unsafemango/memory-wall/internal/store"
@@ -25,15 +24,10 @@ func (s *Server) listSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range items {
-		if items[i].StorageKey == "" {
-			continue
-		}
-		url, err := s.storage.PresignGet(r.Context(), items[i].StorageKey, time.Hour)
-		if err != nil {
+		if err := s.signMediaURLs(r.Context(), &items[i].Memory); err != nil {
 			http.Error(w, "could not load submissions", http.StatusInternalServerError)
 			return
 		}
-		items[i].MediaURL = url
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -62,7 +56,7 @@ func (s *Server) setSubmissionStatus(w http.ResponseWriter, r *http.Request, sta
 }
 
 func (s *Server) deleteSubmission(w http.ResponseWriter, r *http.Request) {
-	key, err := s.submissions.DeleteForOwner(r.Context(), chi.URLParam(r, "id"), organizerIDFrom(r))
+	keys, err := s.submissions.DeleteForOwner(r.Context(), chi.URLParam(r, "id"), organizerIDFrom(r))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "submission not found", http.StatusNotFound)
 		return
@@ -74,7 +68,7 @@ func (s *Server) deleteSubmission(w http.ResponseWriter, r *http.Request) {
 
 	// The row is already gone, so a failed file delete only leaves an orphaned
 	// object in the bucket. Log it rather than failing the request.
-	if key != "" {
+	for _, key := range keys {
 		if err := s.storage.Delete(r.Context(), key); err != nil {
 			log.Printf("delete media %s: %v", key, err)
 		}

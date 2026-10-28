@@ -113,7 +113,14 @@ export default function ManageEventPage() {
                 <img className="mt-2 max-h-64 rounded" src={it.media_url} alt={`Photo from ${it.sender_name}`} />
               )}
               {it.type === "video" && it.media_url && (
-                <video className="mt-2 max-h-64 rounded" src={it.media_url} controls playsInline preload="metadata" />
+                <video
+                  className="mt-2 max-h-64 rounded"
+                  src={it.media_url}
+                  poster={it.thumbnail_url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                />
               )}
               {it.message && <p className="mt-2 whitespace-pre-wrap">{it.message}</p>}
               <div className="mt-3 flex flex-wrap gap-2">

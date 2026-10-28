@@ -28,8 +28,10 @@ type Memory struct {
 	CreatedAt  time.Time `json:"created_at"`
 	MimeType   string    `json:"mime_type,omitempty"`
 	// MediaURL is filled in by the handler with a temporary signed link.
-	MediaURL   string `json:"media_url,omitempty"`
-	StorageKey string `json:"-"`
+	MediaURL     string `json:"media_url,omitempty"`
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	StorageKey   string `json:"-"`
+	ThumbnailKey string `json:"-"`
 }
 
 type SubmissionStore struct {
@@ -85,6 +87,18 @@ func (s *SubmissionStore) Create(ctx context.Context, sub Submission, media *Med
 		}
 	}
 
+	// Videos get a thumbnail and their duration from a background job. Queueing
+	// it in this transaction means a saved video always has its job.
+	if sub.Type == "video" {
+		_, err = tx.Exec(ctx,
+			`INSERT INTO jobs (type, payload) VALUES ($1, json_build_object('submission_id', $2::uuid))`,
+			JobProcessVideo, id,
+		)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	return id, tx.Commit(ctx)
 }
 
@@ -102,7 +116,7 @@ func (s *SubmissionStore) GetByID(ctx context.Context, id string) (Submission, e
 func (s *SubmissionStore) ListApprovedBySlug(ctx context.Context, slug string) ([]Memory, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at,
-		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, '')
+		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, ''), COALESCE(m.thumbnail_key, '')
 		 FROM submissions s
 		 JOIN events e ON e.id = s.event_id
 		 LEFT JOIN media m ON m.submission_id = s.id
@@ -115,7 +129,7 @@ func (s *SubmissionStore) ListApprovedBySlug(ctx context.Context, slug string) (
 	}
 	memories, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Memory, error) {
 		var m Memory
-		err := row.Scan(&m.ID, &m.SenderName, &m.Type, &m.Message, &m.CreatedAt, &m.StorageKey, &m.MimeType)
+		err := row.Scan(&m.ID, &m.SenderName, &m.Type, &m.Message, &m.CreatedAt, &m.StorageKey, &m.MimeType, &m.ThumbnailKey)
 		return m, err
 	})
 	if memories == nil {
@@ -135,7 +149,7 @@ type ModerationItem struct {
 func (s *SubmissionStore) ListForOwner(ctx context.Context, eventID, ownerID string) ([]ModerationItem, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at,
-		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, ''), s.status
+		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, ''), COALESCE(m.thumbnail_key, ''), s.status
 		 FROM submissions s
 		 JOIN events e ON e.id = s.event_id
 		 LEFT JOIN media m ON m.submission_id = s.id
@@ -148,7 +162,7 @@ func (s *SubmissionStore) ListForOwner(ctx context.Context, eventID, ownerID str
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ModerationItem, error) {
 		var it ModerationItem
-		err := row.Scan(&it.ID, &it.SenderName, &it.Type, &it.Message, &it.CreatedAt, &it.StorageKey, &it.MimeType, &it.Status)
+		err := row.Scan(&it.ID, &it.SenderName, &it.Type, &it.Message, &it.CreatedAt, &it.StorageKey, &it.MimeType, &it.ThumbnailKey, &it.Status)
 		return it, err
 	})
 	if items == nil {
@@ -175,24 +189,30 @@ func (s *SubmissionStore) UpdateStatus(ctx context.Context, id, ownerID, status 
 	return nil
 }
 
-// DeleteForOwner removes a submission and returns its media's storage key, if
-// any, so the caller can delete the file too.
-func (s *SubmissionStore) DeleteForOwner(ctx context.Context, id, ownerID string) (string, error) {
-	var key string
+// DeleteForOwner removes a submission and returns the bucket keys of its
+// media and thumbnail, if any, so the caller can delete the files too.
+func (s *SubmissionStore) DeleteForOwner(ctx context.Context, id, ownerID string) ([]string, error) {
+	var mediaKey, thumbKey string
 	err := s.db.QueryRow(ctx,
 		`WITH target AS (
-		     SELECT s.id, COALESCE(m.storage_key, '') AS storage_key
+		     SELECT s.id, COALESCE(m.storage_key, '') AS storage_key, COALESCE(m.thumbnail_key, '') AS thumbnail_key
 		     FROM submissions s
 		     JOIN events e ON e.id = s.event_id
 		     LEFT JOIN media m ON m.submission_id = s.id
 		     WHERE s.id = $1 AND e.owner_id = $2
 		 )
 		 DELETE FROM submissions USING target WHERE submissions.id = target.id
-		 RETURNING target.storage_key`,
+		 RETURNING target.storage_key, target.thumbnail_key`,
 		id, ownerID,
-	).Scan(&key)
+	).Scan(&mediaKey, &thumbKey)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrNotFound
+		return nil, ErrNotFound
 	}
-	return key, err
+	var keys []string
+	for _, k := range []string{mediaKey, thumbKey} {
+		if k != "" {
+			keys = append(keys, k)
+		}
+	}
+	return keys, err
 }

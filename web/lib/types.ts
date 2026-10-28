@@ -14,6 +14,8 @@ export type Memory = {
   created_at: string;
   mime_type?: string;
   media_url?: string;
+  // Set for videos once the background job has made a thumbnail.
+  thumbnail_url?: string;
 };
 
 export type OrganizerEvent = EventInfo & {
