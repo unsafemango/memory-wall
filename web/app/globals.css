@@ -266,3 +266,46 @@ h3 {
   font-family: var(--font-fredoka), var(--font-quicksand), sans-serif;
   font-size: 1.1rem;
 }
+
+/* Loading, empty, and error states on the event page */
+.skeleton {
+  display: block;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #f3e8ff 0%, #fde7f3 50%, #f3e8ff 100%);
+  background-size: 200% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+.empty-state {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--ink-soft);
+  margin: 8px 20px 0;
+}
+.wall-button {
+  position: relative;
+  margin-top: 8px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(90deg, var(--pink-deep), var(--purple));
+  cursor: pointer;
+}
+.wall-button:focus-visible {
+  outline: 3px solid var(--purple-deep);
+  outline-offset: 3px;
+}

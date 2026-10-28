@@ -48,11 +48,15 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         <p className="hero-sub">A few people who love you wanted to leave you something.</p>
       </section>
 
-      <section className="timeline" aria-label="Memories">
-        {memories.map((m) => (
-          <MemoryCard key={m.id} memory={m} />
-        ))}
-      </section>
+      {memories.length === 0 ? (
+        <p className="empty-state">No memories yet. Check back soon.</p>
+      ) : (
+        <section className="timeline" aria-label="Memories">
+          {memories.map((m) => (
+            <MemoryCard key={m.id} memory={m} />
+          ))}
+        </section>
+      )}
 
       {event.closing_message && (
         <section className="closing-wrap">
