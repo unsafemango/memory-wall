@@ -78,3 +78,128 @@ h3 {
     display: none;
   }
 }
+
+/* Event page. It keeps one bright look in light and dark mode on purpose. */
+.wall {
+  flex: 1;
+  color: var(--ink);
+  background: linear-gradient(180deg, #fdf1ff 0%, var(--cream) 55%, #fff2e2 100%);
+  padding-bottom: 64px;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  padding: 72px 20px 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.hero-eyebrow {
+  position: relative;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--purple-deep);
+  background: rgba(139, 92, 246, 0.12);
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+.hero .name {
+  position: relative;
+  margin: 0;
+  font-size: clamp(2.4rem, 8vw, 4.2rem);
+  line-height: 1.05;
+  font-weight: 600;
+  text-wrap: balance;
+  max-width: 18ch;
+  background: linear-gradient(90deg, var(--pink-deep), var(--purple));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-sub {
+  position: relative;
+  margin: 0;
+  max-width: 34ch;
+  font-size: 1.1rem;
+  color: var(--ink-soft);
+}
+
+.timeline {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 20px;
+  columns: 3 280px;
+  column-gap: 24px;
+}
+.timeline > * {
+  break-inside: avoid;
+  margin-bottom: 24px;
+}
+
+.note-card {
+  border-radius: 20px;
+  padding: 22px 22px 18px;
+  background: #fff;
+  box-shadow: 0 10px 30px -18px rgba(59, 29, 74, 0.45);
+  border-top: 6px solid var(--pink);
+}
+.timeline > .note-card:nth-child(3n + 2) {
+  border-top-color: var(--purple);
+}
+.timeline > .note-card:nth-child(3n) {
+  border-top-color: var(--orange);
+}
+.note-card .msg {
+  margin: 0 0 14px;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.sender {
+  font-family: var(--font-fredoka), var(--font-quicksand), sans-serif;
+  font-weight: 500;
+  color: var(--pink-deep);
+}
+.sender::before {
+  content: "— ";
+}
+
+.polaroid {
+  background: #fff;
+  padding: 12px 12px 16px;
+  border-radius: 6px;
+  box-shadow: 0 14px 32px -18px rgba(59, 29, 74, 0.55);
+  transform: rotate(-1.6deg);
+}
+.timeline > .polaroid:nth-child(even) {
+  transform: rotate(1.4deg);
+}
+.polaroid .thumb {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: cover;
+  border-radius: 2px;
+  background: #f3e8ff;
+}
+.polaroid .cap {
+  padding: 12px 4px 0;
+}
+.polaroid .cap .msg {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .polaroid {
+    transition: transform 0.25s ease;
+  }
+  .timeline > .polaroid:hover {
+    transform: rotate(0deg) scale(1.01);
+  }
+}

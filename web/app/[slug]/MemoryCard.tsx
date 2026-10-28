@@ -1,18 +1,28 @@
 import type { Memory } from "@/lib/types";
 
 export function MemoryCard({ memory }: { memory: Memory }) {
+  if (memory.type === "note" || !memory.media_url) {
+    return (
+      <article className="note-card">
+        <p className="msg">{memory.message}</p>
+        <span className="sender">{memory.sender_name}</span>
+      </article>
+    );
+  }
+
   return (
-    <div className="rounded border p-4">
-      <p className="font-medium">{memory.sender_name}</p>
-      {memory.type === "photo" && memory.media_url && (
+    <article className="polaroid">
+      {memory.type === "video" ? (
+        <video className="thumb" src={memory.media_url} controls playsInline preload="metadata" />
+      ) : (
         // Signed bucket URLs change on every request, so next/image's optimizer can't cache them.
         // eslint-disable-next-line @next/next/no-img-element
-        <img className="mt-2 w-full rounded" src={memory.media_url} alt={`Photo from ${memory.sender_name}`} />
+        <img className="thumb" src={memory.media_url} alt={`Photo from ${memory.sender_name}`} loading="lazy" />
       )}
-      {memory.type === "video" && memory.media_url && (
-        <video className="mt-2 w-full rounded" src={memory.media_url} controls playsInline preload="metadata" />
-      )}
-      {memory.message && <p className="mt-2 whitespace-pre-wrap">{memory.message}</p>}
-    </div>
+      <div className="cap">
+        <span className="sender">{memory.sender_name}</span>
+        {memory.message && <p className="msg">{memory.message}</p>}
+      </div>
+    </article>
   );
 }

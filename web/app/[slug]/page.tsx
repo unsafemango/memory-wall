@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { EventInfo, Memory } from "@/lib/types";
+import { Confetti } from "./Confetti";
 import { MemoryCard } from "./MemoryCard";
 
 // Server-side requests can use a different address than the browser does,
@@ -13,19 +15,44 @@ async function getMemories(slug: string): Promise<{ event: EventInfo; memories: 
   return res.json();
 }
 
+function formatDate(isoDate: string) {
+  // Dates come as "2026-11-14"; noon UTC keeps the day the same in every timezone.
+  return new Date(`${isoDate}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const data = await getMemories(slug).catch(() => null);
+  return { title: data ? `${data.event.title} · Memory Wall` : "Memory Wall" };
+}
+
 export default async function EventPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const data = await getMemories(slug);
   if (!data) notFound();
 
+  const { event, memories } = data;
+
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-6 text-3xl font-semibold">{data.event.title}</h1>
-      <div className="flex flex-col gap-4">
-        {data.memories.map((m) => (
+    <main className="wall">
+      <section className="hero">
+        <Confetti />
+        <span className="hero-eyebrow">{event.event_date ? formatDate(event.event_date) : "A very special day"}</span>
+        <h1 className="name">{event.title}</h1>
+        <p className="hero-sub">A few people who love you wanted to leave you something.</p>
+      </section>
+
+      <section className="timeline" aria-label="Memories">
+        {memories.map((m) => (
           <MemoryCard key={m.id} memory={m} />
         ))}
-      </div>
+      </section>
     </main>
   );
 }
