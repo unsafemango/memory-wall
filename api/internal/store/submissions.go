@@ -25,6 +25,10 @@ type Memory struct {
 	Type       string    `json:"type"`
 	Message    string    `json:"message"`
 	CreatedAt  time.Time `json:"created_at"`
+	MimeType   string    `json:"mime_type,omitempty"`
+	// MediaURL is filled in by the handler with a temporary signed link.
+	MediaURL   string `json:"media_url,omitempty"`
+	StorageKey string `json:"-"`
 }
 
 type SubmissionStore struct {
@@ -58,9 +62,11 @@ func (s *SubmissionStore) GetByID(ctx context.Context, id string) (Submission, e
 // ListApprovedBySlug returns an event's approved submissions, oldest first.
 func (s *SubmissionStore) ListApprovedBySlug(ctx context.Context, slug string) ([]Memory, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at
+		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at,
+		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, '')
 		 FROM submissions s
 		 JOIN events e ON e.id = s.event_id
+		 LEFT JOIN media m ON m.submission_id = s.id
 		 WHERE e.slug = $1 AND s.status = 'approved'
 		 ORDER BY s.created_at`,
 		slug,
@@ -70,7 +76,7 @@ func (s *SubmissionStore) ListApprovedBySlug(ctx context.Context, slug string) (
 	}
 	memories, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Memory, error) {
 		var m Memory
-		err := row.Scan(&m.ID, &m.SenderName, &m.Type, &m.Message, &m.CreatedAt)
+		err := row.Scan(&m.ID, &m.SenderName, &m.Type, &m.Message, &m.CreatedAt, &m.StorageKey, &m.MimeType)
 		return m, err
 	})
 	if memories == nil {
