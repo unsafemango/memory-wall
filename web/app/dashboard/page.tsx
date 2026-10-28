@@ -10,7 +10,7 @@ import { Toast, useToast } from "../components/Toast";
 import { copyText } from "../components/copy";
 import { EventForm } from "./EventForm";
 
-function EventCard({ event, onCopied }: { event: OrganizerEvent; onCopied: (ok: boolean) => void }) {
+function EventCard({ event, onCopied }: { event: OrganizerEvent; onCopied: (ok: boolean, label: string) => void }) {
   const pending = event.pending_count ?? 0;
   const approved = event.approved_count ?? 0;
 
@@ -32,7 +32,7 @@ function EventCard({ event, onCopied }: { event: OrganizerEvent; onCopied: (ok: 
       <button
         type="button"
         className="event-link"
-        onClick={async () => onCopied(await copyText(`${window.location.origin}/${event.slug}`))}
+        onClick={async () => onCopied(await copyText(`${window.location.origin}/${event.slug}`), "Page link")}
         title="Copy page link"
       >
         /{event.slug} <span aria-hidden="true">· Copy</span>
@@ -41,7 +41,16 @@ function EventCard({ event, onCopied }: { event: OrganizerEvent; onCopied: (ok: 
         <Link className="btn btn-primary btn-small" href={`/dashboard/events/${event.id}`}>
           {pending > 0 ? "Review and invite" : "Manage"}
         </Link>
-        <Link className="btn btn-secondary btn-small" href={`/${event.slug}`} target="_blank">
+        {event.share_enabled && event.share_url && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-small"
+            onClick={async () => onCopied(await copyText(event.share_url!), "Invite link")}
+          >
+            Copy invite link
+          </button>
+        )}
+        <Link className="btn btn-ghost btn-small" href={`/${event.slug}`} target="_blank">
           View page
         </Link>
       </div>
@@ -119,7 +128,7 @@ export default function DashboardPage() {
                   <EventCard
                     key={ev.id}
                     event={ev}
-                    onCopied={(ok) => toast.show(ok ? "Page link copied" : "Couldn't copy, select the link instead")}
+                    onCopied={(ok, label) => toast.show(ok ? `${label} copied` : "Couldn't copy, select the link instead")}
                   />
                 ))}
               </ul>
