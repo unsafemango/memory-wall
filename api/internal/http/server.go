@@ -58,7 +58,19 @@ func (s *Server) Routes() http.Handler {
 	r.Use(s.corsMiddleware)
 
 	r.Get("/api/healthz", healthz)
-	r.Post("/api/auth/signup", s.signup)
+
+	r.Group(func(r chi.Router) {
+		r.Use(s.sameOriginWrites)
+		r.Post("/api/auth/signup", s.signup)
+		r.Post("/api/auth/login", s.login)
+		r.Post("/api/auth/logout", s.logout)
+
+		r.Route("/api/organizer", func(r chi.Router) {
+			r.Use(s.requireOrganizer)
+			r.Get("/me", s.me)
+		})
+	})
+
 	r.Get("/api/invitations/{token}", s.getInvitation)
 	r.Post("/api/invitations/{token}/submissions", s.createSubmission)
 	r.Post("/api/invitations/{token}/suggest-message", s.suggestMessage)

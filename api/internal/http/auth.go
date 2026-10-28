@@ -85,3 +85,45 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, organizerI
 	})
 	w.WriteHeader(http.StatusOK)
 }
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	organizer, err := s.organizers.GetByEmail(r.Context(), email)
+	// The same message for an unknown email and a wrong password, so nobody can
+	// use this endpoint to check who has an account.
+	if err != nil || !auth.VerifyPassword(input.Password, organizer.PasswordHash) {
+		http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	s.startSession(w, r, organizer.ID)
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(sessionCookie); err == nil {
+		s.sessions.Delete(r.Context(), auth.HashToken(cookie.Value))
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	w.WriteHeader(http.StatusOK)
+}
+
+// me returns the logged-in organizer, so the web app can tell whether to show
+// the dashboard or send them to the login page.
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	organizer, err := s.organizers.GetByID(r.Context(), organizerIDFrom(r))
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(organizer)
+}
