@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,9 +23,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// One JSON object per log line, so logs can be searched by field.
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatal("DATABASE_URL is not set")
+		fatal("DATABASE_URL is not set")
 	}
 
 	siteURL := os.Getenv("SITE_URL")
@@ -36,19 +39,19 @@ func main() {
 
 	db, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		log.Fatalf("connect to database: %v", err)
+		fatal("connect to database", "error", err)
 	}
 	defer db.Close()
 
 	if err := db.Ping(ctx); err != nil {
-		log.Fatalf("ping database: %v", err)
+		fatal("ping database", "error", err)
 	}
 
 	var aiClient *ai.Client
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		aiClient = ai.NewClient(key)
 	} else {
-		log.Println("ANTHROPIC_API_KEY is not set, the writing helper is turned off")
+		logger.Warn("ANTHROPIC_API_KEY is not set, the writing helper is turned off")
 	}
 
 	files := storage.New(storage.Config{
@@ -70,10 +73,11 @@ func main() {
 		Storage:     files,
 		SiteURL:     siteURL,
 		TrustProxy:  os.Getenv("TRUST_PROXY_HEADERS") == "true",
+		Logger:      logger,
 	})
 
 	// The job worker runs alongside the HTTP server for the life of the program.
-	worker := jobs.NewWorker(jobs.NewStore(db), slog.Default())
+	worker := jobs.NewWorker(jobs.NewStore(db), logger)
 	worker.Handle(store.JobProcessVideo, jobs.NewVideoProcessor(files, store.NewMediaStore(db)).Handle)
 	workerDone := make(chan struct{})
 	go func() {
@@ -83,18 +87,23 @@ func main() {
 
 	srv := &http.Server{Addr: ":8080", Handler: server.Routes()}
 	go func() {
-		log.Println("listening on :8080")
+		logger.Info("listening", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			fatal("http server", "error", err)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("shutting down")
+	logger.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		logger.Error("shutdown", "error", err)
 	}
 	<-workerDone
+}
+
+func fatal(msg string, args ...any) {
+	slog.Error(msg, args...)
+	os.Exit(1)
 }

@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -70,7 +69,7 @@ func (s *Server) deleteSubmission(w http.ResponseWriter, r *http.Request) {
 	// object in the bucket. Log it rather than failing the request.
 	for _, key := range keys {
 		if err := s.storage.Delete(r.Context(), key); err != nil {
-			log.Printf("delete media %s: %v", key, err)
+			s.logger.Error("delete media", "storage_key", key, "error", err)
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)

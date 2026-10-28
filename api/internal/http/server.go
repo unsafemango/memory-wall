@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -24,6 +25,7 @@ type Server struct {
 	storage     *storage.Storage
 	siteURL     string
 	trustProxy  bool
+	logger      *slog.Logger
 }
 
 // Deps lists what NewServer needs. main.go fills it in once at startup.
@@ -43,9 +45,13 @@ type Deps struct {
 	// TrustProxy reads the client IP from X-Forwarded-For. Only turn it on
 	// behind a proxy you control, since clients can set that header.
 	TrustProxy bool
+	Logger     *slog.Logger
 }
 
 func NewServer(d Deps) *Server {
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
 	return &Server{
 		organizers:  d.Organizers,
 		sessions:    d.Sessions,
@@ -56,6 +62,7 @@ func NewServer(d Deps) *Server {
 		storage:     d.Storage,
 		siteURL:     d.SiteURL,
 		trustProxy:  d.TrustProxy,
+		logger:      d.Logger,
 	}
 }
 
@@ -65,7 +72,7 @@ func (s *Server) Routes() http.Handler {
 	if s.trustProxy {
 		r.Use(middleware.RealIP)
 	}
-	r.Use(s.corsMiddleware)
+	r.Use(middleware.RequestID, s.logRequests, middleware.Recoverer, s.corsMiddleware)
 
 	// Login and signup are what attackers hammer to guess passwords.
 	authLimit := limitByIP(newKeyedLimiter(12*time.Second, 5))
