@@ -16,6 +16,10 @@ type Event struct {
 	EventDate         string `json:"event_date,omitempty"` // "2026-11-14", empty when not set
 	ClosingMessage    string `json:"closing_message,omitempty"`
 	ModerationEnabled bool   `json:"moderation_enabled"`
+	// ShareToken is the event's reusable link. It's never sent as-is; the
+	// organizer endpoints turn it into ShareURL.
+	ShareToken   string `json:"-"`
+	ShareEnabled bool   `json:"-"`
 }
 
 type EventStore struct {
@@ -27,11 +31,12 @@ func NewEventStore(db *pgxpool.Pool) *EventStore {
 }
 
 const eventColumns = `id, COALESCE(owner_id::text, ''), title, slug, COALESCE(event_date::text, ''),
-	COALESCE(closing_message, ''), moderation_enabled`
+	COALESCE(closing_message, ''), moderation_enabled, share_token, share_enabled`
 
 func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	var e Event
-	err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage, &e.ModerationEnabled)
+	err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage, &e.ModerationEnabled,
+		&e.ShareToken, &e.ShareEnabled)
 	return e, err
 }
 
@@ -66,7 +71,7 @@ type EventSummary struct {
 func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSummary, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT e.id, COALESCE(e.owner_id::text, ''), e.title, e.slug, COALESCE(e.event_date::text, ''),
-		        COALESCE(e.closing_message, ''), e.moderation_enabled,
+		        COALESCE(e.closing_message, ''), e.moderation_enabled, e.share_token, e.share_enabled,
 		        COUNT(s.id) FILTER (WHERE s.status = 'pending'),
 		        COUNT(s.id) FILTER (WHERE s.status = 'approved')
 		 FROM events e
@@ -82,7 +87,7 @@ func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSu
 	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EventSummary, error) {
 		var e EventSummary
 		err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage,
-			&e.ModerationEnabled, &e.PendingCount, &e.ApprovedCount)
+			&e.ModerationEnabled, &e.ShareToken, &e.ShareEnabled, &e.PendingCount, &e.ApprovedCount)
 		return e, err
 	})
 	if events == nil {
@@ -119,4 +124,35 @@ func (s *EventStore) Update(ctx context.Context, e Event) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SetShareEnabled turns an event's share link on or off.
+func (s *EventStore) SetShareEnabled(ctx context.Context, id, ownerID string, enabled bool) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE events SET share_enabled = $3 WHERE id = $1 AND owner_id = $2`,
+		id, ownerID, enabled,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ResetShareToken gives the event a new share link. The old one stops
+// working straight away.
+func (s *EventStore) ResetShareToken(ctx context.Context, id, ownerID string) (string, error) {
+	var token string
+	err := s.db.QueryRow(ctx,
+		`UPDATE events SET share_token = encode(gen_random_bytes(32), 'hex')
+		 WHERE id = $1 AND owner_id = $2
+		 RETURNING share_token`,
+		id, ownerID,
+	).Scan(&token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return token, err
 }

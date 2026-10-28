@@ -88,12 +88,13 @@ func limitByIP(l *keyedLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-// limitByToken limits requests per invitation token in the URL, so one link
-// can't be used to hammer an endpoint from many IPs.
+// limitByToken limits each person's requests on an invitation link. It's
+// keyed by link and IP together, so the many guests sharing an event's share
+// link each get their own allowance.
 func limitByToken(l *keyedLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !l.allow(chi.URLParam(r, "token")) {
+			if !l.allow(chi.URLParam(r, "token") + "|" + clientIP(r)) {
 				tooManyRequests(w)
 				return
 			}

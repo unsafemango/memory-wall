@@ -173,3 +173,83 @@ func TestSubmitNoteThroughInvitation(t *testing.T) {
 		t.Fatalf("reusing the link: got %d, want 410", w.Code)
 	}
 }
+
+// TestShareLinkIsReusable checks an event's share link takes many
+// submissions, stops working when turned off, and dies when reset.
+func TestShareLinkIsReusable(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping database test")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	_, hash, _ := auth.NewToken()
+	organizers := store.NewOrganizerStore(db)
+	ownerID, err := organizers.Create(ctx, "share-test-"+hash[:8]+"@test.example", "hash", "Owner")
+	if err != nil {
+		t.Fatalf("create organizer: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM organizers WHERE id = $1`, ownerID) })
+
+	events := store.NewEventStore(db)
+	eventID, err := events.Create(ctx, store.Event{OwnerID: ownerID, Title: "Share test", Slug: "share-test-" + hash[:8], ModerationEnabled: true})
+	if err != nil {
+		t.Fatalf("create event: %v", err)
+	}
+	event, err := events.GetByID(ctx, eventID)
+	if err != nil || len(event.ShareToken) != 64 || !event.ShareEnabled {
+		t.Fatalf("new event should get an enabled share token: %+v, %v", event, err)
+	}
+
+	srv := NewServer(Deps{
+		Events:      events,
+		Invitations: store.NewInvitationStore(db),
+		Submissions: store.NewSubmissionStore(db),
+		SiteURL:     "http://localhost:3000",
+	})
+	router := srv.Routes()
+	submit := func(token, name, ip string) int {
+		r := httptest.NewRequest(http.MethodPost, "/api/invitations/"+token+"/submissions",
+			strings.NewReader(`{"sender_name":"`+name+`","message":"Congratulations!"}`))
+		r.RemoteAddr = ip + ":1234"
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w.Code
+	}
+
+	for i, name := range []string{"Ana", "Ben", "Cy"} {
+		if code := submit(event.ShareToken, name, "192.0.2."+string(rune('1'+i))); code != http.StatusCreated {
+			t.Fatalf("submission %d through the share link: got %d, want 201", i+1, code)
+		}
+	}
+
+	if err := events.SetShareEnabled(ctx, eventID, ownerID, false); err != nil {
+		t.Fatalf("turn off: %v", err)
+	}
+	if code := submit(event.ShareToken, "Dee", "192.0.2.9"); code != http.StatusGone {
+		t.Fatalf("turned-off share link: got %d, want 410", code)
+	}
+
+	if err := events.SetShareEnabled(ctx, eventID, ownerID, true); err != nil {
+		t.Fatalf("turn on: %v", err)
+	}
+	newToken, err := events.ResetShareToken(ctx, eventID, ownerID)
+	if err != nil || newToken == event.ShareToken {
+		t.Fatalf("reset should give a new token: %q, %v", newToken, err)
+	}
+	if code := submit(event.ShareToken, "Eve", "192.0.2.9"); code != http.StatusNotFound {
+		t.Fatalf("old token after reset: got %d, want 404", code)
+	}
+	if code := submit(newToken, "Eve", "192.0.2.9"); code != http.StatusCreated {
+		t.Fatalf("new token after reset: got %d, want 201", code)
+	}
+
+	if _, err := events.ResetShareToken(ctx, eventID, "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Fatal("someone else shouldn't be able to reset the share link")
+	}
+}

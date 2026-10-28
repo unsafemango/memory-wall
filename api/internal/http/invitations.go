@@ -21,8 +21,8 @@ func (s *Server) invitationFromRequest(w http.ResponseWriter, r *http.Request) (
 
 	invitation, err := s.invitations.GetByTokenHash(r.Context(), auth.HashToken(token))
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
-		return invitation, false
+		// Not a personal invitation, so it may be an event's share link.
+		return s.shareLinkFromToken(w, r, token)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not look up invitation")
@@ -35,6 +35,23 @@ func (s *Server) invitationFromRequest(w http.ResponseWriter, r *http.Request) (
 	}
 	if !invitation.Usable(time.Now()) {
 		writeError(w, http.StatusGone, "invitation_expired", "this invitation has expired")
+		return invitation, false
+	}
+	return invitation, true
+}
+
+func (s *Server) shareLinkFromToken(w http.ResponseWriter, r *http.Request, token string) (store.Invitation, bool) {
+	invitation, err := s.invitations.GetShareLink(r.Context(), token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
+		return invitation, false
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not look up invitation")
+		return invitation, false
+	}
+	if !invitation.ShareEnabled {
+		writeError(w, http.StatusGone, "share_link_off", "this link has been turned off")
 		return invitation, false
 	}
 	return invitation, true
@@ -59,6 +76,7 @@ func (s *Server) getInvitation(w http.ResponseWriter, r *http.Request) {
 		"id":             invitation.ID,
 		"recipient_name": invitation.RecipientName,
 		"expires_at":     invitation.ExpiresAt,
+		"shared":         invitation.Shared,
 		"event": map[string]any{
 			"title":              event.Title,
 			"slug":               event.Slug,

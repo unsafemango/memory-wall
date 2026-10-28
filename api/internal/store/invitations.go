@@ -14,6 +14,11 @@ type Invitation struct {
 	RecipientName string     `json:"recipient_name"`
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
 	UsedAt        *time.Time `json:"used_at,omitempty"`
+	// Shared is true for an event's reusable share link. It has no ID or
+	// name, and using it doesn't use it up.
+	Shared bool `json:"shared"`
+	// ShareEnabled is false when the organizer has turned the share link off.
+	ShareEnabled bool `json:"-"`
 }
 
 // Usable reports whether the invitation can still be used to submit.
@@ -38,6 +43,17 @@ func (s *InvitationStore) GetByTokenHash(ctx context.Context, tokenHash string) 
 		 FROM invitations WHERE token_hash = $1`,
 		tokenHash,
 	).Scan(&inv.ID, &inv.EventID, &inv.RecipientName, &inv.ExpiresAt, &inv.UsedAt)
+	return inv, err
+}
+
+// GetShareLink looks up an event by its share token and returns it as a
+// shared invitation. Check ShareEnabled before letting anyone use it.
+func (s *InvitationStore) GetShareLink(ctx context.Context, token string) (Invitation, error) {
+	inv := Invitation{Shared: true}
+	err := s.db.QueryRow(ctx,
+		`SELECT id, share_enabled FROM events WHERE share_token = $1`,
+		token,
+	).Scan(&inv.EventID, &inv.ShareEnabled)
 	return inv, err
 }
 
