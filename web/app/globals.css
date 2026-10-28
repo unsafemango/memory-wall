@@ -309,3 +309,116 @@ h3 {
   outline: 3px solid var(--purple-deep);
   outline-offset: 3px;
 }
+
+/* Invitation page, in the same look as the event page */
+.invite-card {
+  width: min(100% - 32px, 520px);
+  margin: 40px auto 0;
+  padding: 28px 22px;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 18px 40px -24px rgba(59, 29, 74, 0.5);
+}
+.invite-title {
+  margin: 0 0 18px;
+  font-size: 1.7rem;
+  line-height: 1.15;
+  font-weight: 600;
+  text-wrap: balance;
+  color: var(--pink-deep);
+}
+.invite-status {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.invite-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.invite-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+}
+.invite-form input:not([type="file"]),
+.invite-form textarea {
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink);
+  padding: 10px 12px;
+  border: 1.5px solid #ead9f5;
+  border-radius: 12px;
+  background: #fffbff;
+}
+.invite-form textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+.invite-form input:focus-visible,
+.invite-form textarea:focus-visible,
+.invite-form button:focus-visible {
+  outline: 3px solid rgba(139, 92, 246, 0.45);
+  outline-offset: 1px;
+}
+.invite-form input[type="file"] {
+  font-weight: 500;
+  max-width: 100%;
+}
+.invite-form progress {
+  width: 100%;
+  accent-color: var(--purple);
+}
+.helper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: #f8f0ff;
+}
+.helper-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--purple-deep);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--purple);
+  background: #fff;
+  color: var(--purple-deep);
+  cursor: pointer;
+}
+.chip:disabled {
+  opacity: 0.5;
+}
+.suggestion {
+  font: inherit;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px solid #ead9f5;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+.suggestion:hover {
+  border-color: var(--pink);
+}
+.form-error {
+  margin: 0;
+  color: #c0264f;
+  font-weight: 600;
+}
+.wall-button:disabled {
+  opacity: 0.6;
+}

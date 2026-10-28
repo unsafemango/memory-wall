@@ -85,103 +85,100 @@ export default function InvitePage() {
   }
 
   if (linkError) {
-    return <main className="mx-auto max-w-lg p-6"><p>{linkError}</p></main>;
+    return (
+      <main className="wall">
+        <section className="invite-card">
+          <p className="invite-status">{linkError}</p>
+        </section>
+      </main>
+    );
   }
   if (!invitation) {
-    return <main className="mx-auto max-w-lg p-6"><p>Loading…</p></main>;
+    return (
+      <main className="wall" aria-busy="true">
+        <section className="invite-card">
+          <p className="invite-status">Loading…</p>
+        </section>
+      </main>
+    );
   }
   if (submitted) {
     return (
-      <main className="mx-auto max-w-lg p-6">
-        <p>Thank you, {senderName}. Your memory has been added.</p>
+      <main className="wall">
+        <section className="invite-card">
+          <h1 className="invite-title">Thank you, {senderName}!</h1>
+          <p className="invite-status">Your memory has been added.</p>
+        </section>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-lg p-6">
-      <h1 className="mb-4 text-2xl font-semibold">
-        {invitation.recipient_name ? `Hi ${invitation.recipient_name}, leave a memory` : "Leave a memory"}
-      </h1>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1">
-          Your name
-          <input
-            className="rounded border p-2"
-            value={senderName}
-            onChange={(e) => setSenderName(e.target.value)}
-            required
-            maxLength={100}
-          />
-        </label>
-        <div className="flex flex-col gap-2 rounded border p-3">
-          <p className="font-medium">Need help writing something?</p>
-          <input
-            className="rounded border p-2"
-            value={detail}
-            onChange={(e) => setDetail(e.target.value)}
-            placeholder="Optional: mention something specific, an inside joke, a memory..."
-            maxLength={300}
-          />
-          <div className="flex flex-wrap gap-2">
-            {[
-              ["heartfelt", "Heartfelt"],
-              ["funny", "Funny"],
-              ["short", "Short and sweet"],
-            ].map(([tone, label]) => (
-              <button
-                key={tone}
-                type="button"
-                disabled={loadingSuggestions}
-                onClick={() => getSuggestions(tone)}
-                className="rounded-full border px-3 py-1 disabled:opacity-50"
-              >
-                {label}
+    <main className="wall">
+      <section className="invite-card">
+        <h1 className="invite-title">
+          {invitation.recipient_name ? `Hi ${invitation.recipient_name}, leave a memory` : "Leave a memory"}
+        </h1>
+        <form onSubmit={handleSubmit} className="invite-form">
+          <label>
+            Your name
+            <input value={senderName} onChange={(e) => setSenderName(e.target.value)} required maxLength={100} />
+          </label>
+
+          <div className="helper">
+            <p className="helper-title">Need help writing something?</p>
+            <input
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+              placeholder="Optional: an inside joke, a memory..."
+              aria-label="Something to mention"
+              maxLength={300}
+            />
+            <div className="chips">
+              {[
+                ["heartfelt", "Heartfelt"],
+                ["funny", "Funny"],
+                ["short", "Short and sweet"],
+              ].map(([tone, label]) => (
+                <button key={tone} type="button" className="chip" disabled={loadingSuggestions} onClick={() => getSuggestions(tone)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {loadingSuggestions && <p className="invite-status">Thinking…</p>}
+            {suggestionError && <p className="form-error">{suggestionError}</p>}
+            {suggestions.map((s, i) => (
+              <button type="button" key={i} className="suggestion" onClick={() => setMessage(s)}>
+                {s}
               </button>
             ))}
           </div>
-          {loadingSuggestions && <p>Thinking…</p>}
-          {suggestionError && <p className="text-red-600">{suggestionError}</p>}
-          {suggestions.map((s, i) => (
-            <button
-              type="button"
-              key={i}
-              onClick={() => setMessage(s)}
-              className="rounded border p-2 text-left hover:bg-black/5"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-        <label className="flex flex-col gap-1">
-          Your message
-          <textarea
-            className="min-h-32 rounded border p-2"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            required={!file}
-            maxLength={5000}
-            placeholder={file ? "Optional: add a caption" : undefined}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          Add a photo or video (optional)
-          <input
-            type="file"
-            accept={ACCEPTED_FILE_TYPES}
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        {uploadProgress !== null && (
-          <progress className="w-full" value={uploadProgress} max={1}>
-            {Math.round(uploadProgress * 100)}%
-          </progress>
-        )}
-        {formError && <p className="text-red-600">{formError}</p>}
-        <button type="submit" disabled={submitting} className="rounded bg-black px-4 py-2 text-white disabled:opacity-50">
-          {submitting ? "Sending…" : "Send"}
-        </button>
-      </form>
+
+          <label>
+            Your message
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              required={!file}
+              maxLength={5000}
+              placeholder={file ? "Optional: add a caption" : undefined}
+            />
+          </label>
+          <label>
+            Add a photo or video (optional)
+            <input type="file" accept={ACCEPTED_FILE_TYPES} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </label>
+          {uploadProgress !== null && (
+            <progress value={uploadProgress} max={1}>
+              {Math.round(uploadProgress * 100)}%
+            </progress>
+          )}
+          {formError && <p className="form-error">{formError}</p>}
+          <button type="submit" disabled={submitting} className="wall-button">
+            {submitting ? "Sending…" : "Send"}
+          </button>
+        </form>
+      </section>
     </main>
   );
 }
