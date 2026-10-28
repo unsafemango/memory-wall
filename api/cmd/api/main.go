@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/ai"
+	"github.com/unsafemango/memory-wall/internal/auth"
 	httpapi "github.com/unsafemango/memory-wall/internal/http"
 	"github.com/unsafemango/memory-wall/internal/jobs"
 	"github.com/unsafemango/memory-wall/internal/storage"
@@ -54,6 +55,15 @@ func main() {
 		logger.Warn("ANTHROPIC_API_KEY is not set, the writing helper is turned off")
 	}
 
+	var linkSealer *auth.Sealer
+	if key := os.Getenv("INVITATION_LINK_KEY"); key != "" {
+		if linkSealer, err = auth.NewSealer(key); err != nil {
+			fatal("INVITATION_LINK_KEY", "error", err)
+		}
+	} else {
+		logger.Warn("INVITATION_LINK_KEY is not set, personal invite links can only be copied when they're made")
+	}
+
 	files := storage.New(storage.Config{
 		Endpoint:       os.Getenv("S3_ENDPOINT"),
 		PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
@@ -74,6 +84,7 @@ func main() {
 		SiteURL:     siteURL,
 		TrustProxy:  os.Getenv("TRUST_PROXY_HEADERS") == "true",
 		Logger:      logger,
+		LinkSealer:  linkSealer,
 	})
 
 	// The job worker runs alongside the HTTP server for the life of the program.

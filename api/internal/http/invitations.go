@@ -121,13 +121,19 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expiresAt := time.Now().AddDate(0, 0, input.ExpiresInDays)
-	id, err := s.invitations.Create(r.Context(), event.ID, hash, input.RecipientName, expiresAt)
+	sealed, err := s.sealToken(raw)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not save invitation")
+		return
+	}
+	id, err := s.invitations.Create(r.Context(), event.ID, store.NewInvitation{
+		TokenHash: hash, TokenEncrypted: sealed, RecipientName: input.RecipientName,
+	}, expiresAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not save invitation")
 		return
 	}
 
-	// This response is the only place the raw token ever appears.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
@@ -194,8 +200,13 @@ func (s *Server) createInvitations(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal_error", "could not generate tokens")
 			return
 		}
+		sealed, err := s.sealToken(raw)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "could not save invitations")
+			return
+		}
 		raws[i] = raw
-		news[i] = store.NewInvitation{TokenHash: hash, RecipientName: name}
+		news[i] = store.NewInvitation{TokenHash: hash, TokenEncrypted: sealed, RecipientName: name}
 	}
 
 	expiresAt := time.Now().AddDate(0, 0, input.ExpiresInDays)
@@ -215,7 +226,6 @@ func (s *Server) createInvitations(w http.ResponseWriter, r *http.Request) {
 		out[i] = created{ID: ids[i], RecipientName: names[i], InviteURL: s.siteURL + "/invite/" + raws[i]}
 	}
 
-	// Like single invitations, this response is the only place the links appear.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(out)
@@ -233,6 +243,37 @@ func (s *Server) listInvitations(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not load invitations")
 		return
 	}
+
+	type listed struct {
+		store.Invitation
+		// InviteURL is set while the link can still be used and the server
+		// kept a copy of it.
+		InviteURL string `json:"invite_url,omitempty"`
+	}
+	out := make([]listed, len(invitations))
+	now := time.Now()
+	for i, inv := range invitations {
+		out[i] = listed{Invitation: inv}
+		if inv.TokenEncrypted == "" || s.sealer == nil || !inv.Usable(now) {
+			continue
+		}
+		raw, err := s.sealer.Open(inv.TokenEncrypted)
+		if err != nil {
+			// Most likely sealed with a different INVITATION_LINK_KEY.
+			s.logger.Warn("could not open invitation link", "invitation_id", inv.ID, "error", err)
+			continue
+		}
+		out[i].InviteURL = s.siteURL + "/invite/" + raw
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(invitations)
+	json.NewEncoder(w).Encode(out)
+}
+
+// sealToken encrypts a raw invitation token for storage. Without a key it
+// returns an empty string, and the link just can't be shown again later.
+func (s *Server) sealToken(raw string) (string, error) {
+	if s.sealer == nil {
+		return "", nil
+	}
+	return s.sealer.Seal(raw)
 }

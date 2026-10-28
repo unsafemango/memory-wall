@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/unsafemango/memory-wall/internal/ai"
+	"github.com/unsafemango/memory-wall/internal/auth"
 	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
@@ -26,6 +27,7 @@ type Server struct {
 	siteURL     string
 	trustProxy  bool
 	logger      *slog.Logger
+	sealer      *auth.Sealer
 }
 
 // Deps lists what NewServer needs. main.go fills it in once at startup.
@@ -46,6 +48,9 @@ type Deps struct {
 	// behind a proxy you control, since clients can set that header.
 	TrustProxy bool
 	Logger     *slog.Logger
+	// LinkSealer encrypts personal invitation links so organizers can copy
+	// them again. Without it, links can only be copied when they're made.
+	LinkSealer *auth.Sealer
 }
 
 func NewServer(d Deps) *Server {
@@ -63,6 +68,7 @@ func NewServer(d Deps) *Server {
 		siteURL:     d.SiteURL,
 		trustProxy:  d.TrustProxy,
 		logger:      d.Logger,
+		sealer:      d.LinkSealer,
 	}
 }
 

@@ -19,6 +19,10 @@ type Invitation struct {
 	Shared bool `json:"shared"`
 	// ShareEnabled is false when the organizer has turned the share link off.
 	ShareEnabled bool `json:"-"`
+	// TokenEncrypted is the raw token sealed with the server's key, so the
+	// organizer can see the link again. Empty for invitations made before
+	// links were kept.
+	TokenEncrypted string `json:"-"`
 }
 
 // Usable reports whether the invitation can still be used to submit.
@@ -57,21 +61,21 @@ func (s *InvitationStore) GetShareLink(ctx context.Context, token string) (Invit
 	return inv, err
 }
 
-// Create saves a new invitation and returns its ID.
-func (s *InvitationStore) Create(ctx context.Context, eventID, tokenHash, recipientName string, expiresAt time.Time) (string, error) {
-	var id string
-	err := s.db.QueryRow(ctx,
-		`INSERT INTO invitations (event_id, token_hash, recipient_name, expires_at)
-		 VALUES ($1, $2, NULLIF($3, ''), $4) RETURNING id`,
-		eventID, tokenHash, recipientName, expiresAt,
-	).Scan(&id)
-	return id, err
+// Create saves a new invitation and returns its ID. tokenEncrypted may be
+// empty, in which case the link can't be shown again.
+func (s *InvitationStore) Create(ctx context.Context, eventID string, inv NewInvitation, expiresAt time.Time) (string, error) {
+	ids, err := s.CreateMany(ctx, eventID, []NewInvitation{inv}, expiresAt)
+	if err != nil {
+		return "", err
+	}
+	return ids[0], nil
 }
 
 // NewInvitation is one invitation to create in bulk.
 type NewInvitation struct {
-	TokenHash     string
-	RecipientName string
+	TokenHash      string
+	TokenEncrypted string
+	RecipientName  string
 }
 
 // CreateMany saves several invitations in one transaction, so either all of
@@ -86,9 +90,9 @@ func (s *InvitationStore) CreateMany(ctx context.Context, eventID string, invita
 	ids := make([]string, len(invitations))
 	for i, inv := range invitations {
 		err := tx.QueryRow(ctx,
-			`INSERT INTO invitations (event_id, token_hash, recipient_name, expires_at)
-			 VALUES ($1, $2, NULLIF($3, ''), $4) RETURNING id`,
-			eventID, inv.TokenHash, inv.RecipientName, expiresAt,
+			`INSERT INTO invitations (event_id, token_hash, token_encrypted, recipient_name, expires_at)
+			 VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5) RETURNING id`,
+			eventID, inv.TokenHash, inv.TokenEncrypted, inv.RecipientName, expiresAt,
 		).Scan(&ids[i])
 		if err != nil {
 			return nil, err
@@ -97,11 +101,11 @@ func (s *InvitationStore) CreateMany(ctx context.Context, eventID string, invita
 	return ids, tx.Commit(ctx)
 }
 
-// ListForEvent returns an event's invitations, newest first. Tokens can't be
-// shown again since only their hashes are stored.
+// ListForEvent returns an event's invitations, newest first, with their
+// encrypted tokens so the caller can rebuild the links.
 func (s *InvitationStore) ListForEvent(ctx context.Context, eventID string) ([]Invitation, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id, event_id, COALESCE(recipient_name, ''), expires_at, used_at
+		`SELECT id, event_id, COALESCE(recipient_name, ''), expires_at, used_at, COALESCE(token_encrypted, '')
 		 FROM invitations WHERE event_id = $1 ORDER BY created_at DESC`,
 		eventID,
 	)
@@ -110,7 +114,7 @@ func (s *InvitationStore) ListForEvent(ctx context.Context, eventID string) ([]I
 	}
 	invitations, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Invitation, error) {
 		var inv Invitation
-		err := row.Scan(&inv.ID, &inv.EventID, &inv.RecipientName, &inv.ExpiresAt, &inv.UsedAt)
+		err := row.Scan(&inv.ID, &inv.EventID, &inv.RecipientName, &inv.ExpiresAt, &inv.UsedAt, &inv.TokenEncrypted)
 		return inv, err
 	})
 	if invitations == nil {

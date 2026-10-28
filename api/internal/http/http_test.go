@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/auth"
 	"github.com/unsafemango/memory-wall/internal/store"
@@ -134,7 +135,7 @@ func TestSubmitNoteThroughInvitation(t *testing.T) {
 		t.Fatalf("create event: %v", err)
 	}
 	invitations := store.NewInvitationStore(db)
-	if _, err := invitations.Create(ctx, eventID, hash, "Guest", time.Now().Add(time.Hour)); err != nil {
+	if _, err := invitations.Create(ctx, eventID, store.NewInvitation{TokenHash: hash, RecipientName: "Guest"}, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("create invitation: %v", err)
 	}
 
@@ -252,4 +253,104 @@ func TestShareLinkIsReusable(t *testing.T) {
 	if _, err := events.ResetShareToken(ctx, eventID, "00000000-0000-0000-0000-000000000000"); err == nil {
 		t.Fatal("someone else shouldn't be able to reset the share link")
 	}
+}
+
+// TestInvitationLinksCanBeShownAgain checks the organizer's invitation list
+// gives back a working link for open invitations, and none once it's used.
+func TestInvitationLinksCanBeShownAgain(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping database test")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	_, suffix, _ := auth.NewToken()
+	organizers := store.NewOrganizerStore(db)
+	ownerID, err := organizers.Create(ctx, "links-test-"+suffix[:8]+"@test.example", "hash", "Owner")
+	if err != nil {
+		t.Fatalf("create organizer: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM organizers WHERE id = $1`, ownerID) })
+	events := store.NewEventStore(db)
+	eventID, err := events.Create(ctx, store.Event{OwnerID: ownerID, Title: "Links test", Slug: "links-test-" + suffix[:8]})
+	if err != nil {
+		t.Fatalf("create event: %v", err)
+	}
+
+	sealer, _ := auth.NewSealer("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+	srv := NewServer(Deps{
+		Events:      events,
+		Invitations: store.NewInvitationStore(db),
+		Submissions: store.NewSubmissionStore(db),
+		SiteURL:     "http://localhost:3000",
+		LinkSealer:  sealer,
+	})
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r = r.WithContext(context.WithValue(r.Context(), organizerIDKey, ownerID))
+		w := httptest.NewRecorder()
+		switch {
+		case strings.HasSuffix(path, "/bulk"):
+			srv.withEventID(srv.createInvitations, eventID).ServeHTTP(w, r)
+		default:
+			srv.withEventID(srv.listInvitations, eventID).ServeHTTP(w, r)
+		}
+		return w
+	}
+
+	created := call(http.MethodPost, "/bulk", `{"names":["Emma","Yray"]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var made []struct {
+		ID        string `json:"id"`
+		InviteURL string `json:"invite_url"`
+	}
+	json.NewDecoder(created.Body).Decode(&made)
+
+	var listed []struct {
+		ID        string `json:"id"`
+		InviteURL string `json:"invite_url"`
+	}
+	json.NewDecoder(call(http.MethodGet, "/", "").Body).Decode(&listed)
+	byID := map[string]string{}
+	for _, l := range listed {
+		byID[l.ID] = l.InviteURL
+	}
+	for _, m := range made {
+		if byID[m.ID] == "" || byID[m.ID] != m.InviteURL {
+			t.Fatalf("list should give back the same link: made %q, listed %q", m.InviteURL, byID[m.ID])
+		}
+	}
+
+	// Once someone posts with a link, the list stops offering it.
+	token := made[0].InviteURL[strings.LastIndex(made[0].InviteURL, "/")+1:]
+	r := httptest.NewRequest(http.MethodPost, "/api/invitations/"+token+"/submissions", strings.NewReader(`{"sender_name":"Emma","message":"Hi!"}`))
+	r.RemoteAddr = "192.0.2.50:1"
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, r)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("submit: %d %s", w.Code, w.Body.String())
+	}
+	listed = nil
+	json.NewDecoder(call(http.MethodGet, "/", "").Body).Decode(&listed)
+	for _, l := range listed {
+		if l.ID == made[0].ID && l.InviteURL != "" {
+			t.Fatal("a used link shouldn't be offered again")
+		}
+	}
+}
+
+// withEventID runs h as if the route had matched {eventID}.
+func (s *Server) withEventID(h http.HandlerFunc, eventID string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("eventID", eventID)
+		h(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
+	})
 }

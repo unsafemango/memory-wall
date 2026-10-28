@@ -37,7 +37,7 @@ The event page is a Server Component, so it fetches memories on the server. Ever
 - **The bucket is private.** Photos and videos come back as signed GET links that expire after an hour.
 - **The job queue is a Postgres table.** At this scale it's simpler than Kafka or Redis and keeps one database to run. Workers claim jobs with `FOR UPDATE SKIP LOCKED`, failed jobs retry with a growing delay up to three times, and jobs left running by a restart are picked up again. A video's job is queued in the same transaction that saves it.
 - **Two kinds of invite link.** Each event has a **share link** anyone can use as many times as they like. It's the easy way to invite a big group, and moderation keeps strangers off the page if it spreads. The organizer can turn it off, or reset it so the old link stops working. **Personal links** greet a guest by name, work once, and show who has posted. Organizers can make up to 200 at a time from a list of names and download them as a CSV.
-- **Tokens are stored as hashes.** Session cookies and personal invitation links are 32 random bytes. Only their SHA-256 hash goes in the database, so a leaked backup can't be used to log in or submit. Passwords use Argon2id instead, because unlike random tokens they're guessable. Share tokens are the exception: they're stored as-is so the organizer can copy the link again, which is acceptable for a link that's meant to be passed around and can be reset.
+- **Tokens are stored as hashes.** Session cookies and personal invitation links are 32 random bytes. Only their SHA-256 hash goes in the database, so a leaked backup can't be used to log in or submit. Passwords use Argon2id instead, because unlike random tokens they're guessable. Share tokens are the exception: they're stored as-is so the organizer can copy the link again, which is acceptable for a link that's meant to be passed around and can be reset. Personal links are also kept encrypted (AES-256-GCM, keyed by `INVITATION_LINK_KEY`) next to their hash, so the organizer can click a name to see its link again. A leaked database alone doesn't reveal them.
 - **Personal links are single-use.** Saving a submission marks the invitation used in the same transaction, so two requests racing on one link can't both succeed. Expired, used, or turned-off links return `410 Gone` with a clear message.
 - **Ownership checks live in the SQL.** Every organizer query joins on `events.owner_id`, and someone else's event or submission returns `404`, not `403`, so IDs can't be probed.
 - **CSRF.** The session cookie is `HttpOnly` and `SameSite=Lax`, CORS only allows the web app's origin, and state-changing requests with a different `Origin` header are rejected.
@@ -150,6 +150,7 @@ API (`api/.env`):
 | `S3_PUBLIC_ENDPOINT`  | How browsers reach the bucket. Presigned URLs are signed for it     |
 | `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Bucket settings and credentials |
 | `ANTHROPIC_API_KEY`   | Turns on the writing helper                                         |
+| `INVITATION_LINK_KEY` | 64 hex characters (`openssl rand -hex 32`). Encrypts personal invite links so organizers can copy them again. Keep it secret and don't change it, or older links can't be shown |
 | `TRUST_PROXY_HEADERS` | `true` behind a proxy you control, so rate limits use the real client IP |
 
 Web (`web/.env`):
