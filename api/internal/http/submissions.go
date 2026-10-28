@@ -27,7 +27,7 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 
 	var input submissionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 
@@ -35,17 +35,17 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 	input.Message = strings.TrimSpace(input.Message)
 	hasMedia := input.StorageKey != ""
 	if input.SenderName == "" || (input.Message == "" && !hasMedia) {
-		http.Error(w, "your name and a message, photo, or video are required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "your name and a message, photo, or video are required")
 		return
 	}
 	if len(input.SenderName) > 100 || len(input.Message) > 5000 {
-		http.Error(w, "name or message is too long", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "name or message is too long")
 		return
 	}
 
 	event, err := s.events.GetByID(r.Context(), invitation.EventID)
 	if err != nil {
-		http.Error(w, "could not look up event", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not look up event")
 		return
 	}
 
@@ -72,22 +72,22 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 	rule, ok := allowedMimeTypes[strings.ToLower(input.MimeType)]
 	if !ok || !strings.HasPrefix(input.StorageKey, mediaKeyPrefix(invitation.EventID)) ||
 		!strings.HasSuffix(input.StorageKey, rule.extension) {
-		http.Error(w, "invalid upload", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid upload")
 		return
 	}
 
 	// Don't take the browser's word that the upload finished, check the bucket.
 	size, err := s.storage.Size(r.Context(), input.StorageKey)
 	if errors.Is(err, storage.ErrNotFound) {
-		http.Error(w, "upload not found, try attaching the file again", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "upload not found, try attaching the file again")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not check upload", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not check upload")
 		return
 	}
 	if size > rule.maxBytes {
-		http.Error(w, "file is too large", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "file is too large")
 		return
 	}
 
@@ -102,11 +102,11 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 func (s *Server) saveSubmission(w http.ResponseWriter, r *http.Request, sub store.Submission, media *store.Media) {
 	id, err := s.submissions.Create(r.Context(), sub, media)
 	if errors.Is(err, store.ErrInvitationUsed) {
-		http.Error(w, "this invitation has already been used", http.StatusGone)
+		writeError(w, http.StatusGone, "invitation_used", "this invitation has already been used")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not save submission", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not save submission")
 		return
 	}
 

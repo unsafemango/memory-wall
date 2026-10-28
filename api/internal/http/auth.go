@@ -24,7 +24,7 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"display_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 
@@ -32,27 +32,27 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	displayName := strings.TrimSpace(input.DisplayName)
 	if _, err := mail.ParseAddress(email); err != nil || displayName == "" || len(input.Password) < 10 {
-		http.Error(w, "name, a valid email, and a password of at least 10 characters are required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "name, a valid email, and a password of at least 10 characters are required")
 		return
 	}
 	if len(displayName) > 100 || len(input.Password) > 200 {
-		http.Error(w, "name or password is too long", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "name or password is too long")
 		return
 	}
 
 	hash, err := auth.HashPassword(input.Password)
 	if err != nil {
-		http.Error(w, "could not create account", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not create account")
 		return
 	}
 
 	organizerID, err := s.organizers.Create(r.Context(), email, hash, displayName)
 	if errors.Is(err, store.ErrDuplicate) {
-		http.Error(w, "an account with that email already exists", http.StatusConflict)
+		writeError(w, http.StatusConflict, "email_taken", "an account with that email already exists")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not create account", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not create account")
 		return
 	}
 
@@ -63,13 +63,13 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, organizerID string) {
 	raw, hash, err := auth.NewToken()
 	if err != nil {
-		http.Error(w, "could not start session", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not start session")
 		return
 	}
 
 	expires := time.Now().Add(sessionDuration)
 	if err := s.sessions.Create(r.Context(), hash, organizerID, expires); err != nil {
-		http.Error(w, "could not start session", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not start session")
 		return
 	}
 
@@ -92,7 +92,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 
@@ -101,7 +101,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// The same message for an unknown email and a wrong password, so nobody can
 	// use this endpoint to check who has an account.
 	if err != nil || !auth.VerifyPassword(input.Password, organizer.PasswordHash) {
-		http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid email or password")
 		return
 	}
 
@@ -121,7 +121,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	organizer, err := s.organizers.GetByID(r.Context(), organizerIDFrom(r))
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

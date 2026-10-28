@@ -62,7 +62,7 @@ func (l *keyedLimiter) cleanup() {
 
 func tooManyRequests(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "60")
-	http.Error(w, "too many requests, try again in a minute", http.StatusTooManyRequests)
+	writeError(w, http.StatusTooManyRequests, "rate_limited", "too many requests, try again in a minute")
 }
 
 // clientIP is the address the request came from. Behind a reverse proxy, the

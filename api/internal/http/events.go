@@ -33,7 +33,7 @@ type eventInput struct {
 func decodeEvent(w http.ResponseWriter, r *http.Request) (eventInput, bool) {
 	var input eventInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return input, false
 	}
 	input.Title = strings.TrimSpace(input.Title)
@@ -41,21 +41,21 @@ func decodeEvent(w http.ResponseWriter, r *http.Request) (eventInput, bool) {
 	input.ClosingMessage = strings.TrimSpace(input.ClosingMessage)
 
 	if input.Title == "" || len(input.Title) > 200 {
-		http.Error(w, "a title of up to 200 characters is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "a title of up to 200 characters is required")
 		return input, false
 	}
 	if !slugPattern.MatchString(input.Slug) || len(input.Slug) > 60 || reservedSlugs[input.Slug] {
-		http.Error(w, "the link can only use lowercase letters, numbers, and dashes", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "the link can only use lowercase letters, numbers, and dashes")
 		return input, false
 	}
 	if input.EventDate != "" {
 		if _, err := time.Parse("2006-01-02", input.EventDate); err != nil {
-			http.Error(w, "the date must look like 2026-11-14", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid_request", "the date must look like 2026-11-14")
 			return input, false
 		}
 	}
 	if len(input.ClosingMessage) > 5000 {
-		http.Error(w, "the closing message is too long", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "the closing message is too long")
 		return input, false
 	}
 	return input, true
@@ -77,11 +77,11 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 		ModerationEnabled: input.ModerationEnabled,
 	})
 	if errors.Is(err, store.ErrDuplicate) {
-		http.Error(w, "that link is already taken, try another", http.StatusConflict)
+		writeError(w, http.StatusConflict, "slug_taken", "that link is already taken, try another")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not create event", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not create event")
 		return
 	}
 
@@ -93,7 +93,7 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listMyEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := s.events.ListByOwner(r.Context(), organizerIDFrom(r))
 	if err != nil {
-		http.Error(w, "could not load events", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load events")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -103,11 +103,11 @@ func (s *Server) listMyEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getMyEvent(w http.ResponseWriter, r *http.Request) {
 	event, err := s.events.GetOwned(r.Context(), chi.URLParam(r, "eventID"), organizerIDFrom(r))
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "event not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not load event", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load event")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -130,15 +130,15 @@ func (s *Server) updateEvent(w http.ResponseWriter, r *http.Request) {
 		ModerationEnabled: input.ModerationEnabled,
 	})
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "event not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
 	if errors.Is(err, store.ErrDuplicate) {
-		http.Error(w, "that link is already taken, try another", http.StatusConflict)
+		writeError(w, http.StatusConflict, "slug_taken", "that link is already taken, try another")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not update event", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not update event")
 		return
 	}
 	w.WriteHeader(http.StatusOK)

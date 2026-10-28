@@ -41,17 +41,17 @@ func (s *Server) createUploadURL(w http.ResponseWriter, r *http.Request) {
 		Size     int64  `json:"size"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 
 	rule, ok := allowedMimeTypes[strings.ToLower(input.MimeType)]
 	if !ok {
-		http.Error(w, "unsupported file type, use a JPEG, PNG, WebP or HEIC photo, or an MP4 or MOV video", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported file type, use a JPEG, PNG, WebP or HEIC photo, or an MP4 or MOV video")
 		return
 	}
 	if input.Size <= 0 || input.Size > rule.maxBytes {
-		http.Error(w, "file is too large", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "file is too large")
 		return
 	}
 
@@ -61,7 +61,7 @@ func (s *Server) createUploadURL(w http.ResponseWriter, r *http.Request) {
 
 	url, err := s.storage.PresignPut(r.Context(), key, input.MimeType, input.Size, 5*time.Minute)
 	if err != nil {
-		http.Error(w, "could not create upload URL", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not create upload URL")
 		return
 	}
 

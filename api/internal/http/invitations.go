@@ -21,20 +21,20 @@ func (s *Server) invitationFromRequest(w http.ResponseWriter, r *http.Request) (
 
 	invitation, err := s.invitations.GetByTokenHash(r.Context(), auth.HashToken(token))
 	if errors.Is(err, pgx.ErrNoRows) {
-		http.Error(w, "invitation not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
 		return invitation, false
 	}
 	if err != nil {
-		http.Error(w, "could not look up invitation", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not look up invitation")
 		return invitation, false
 	}
 	// 410 Gone: the link was real, but can't be used any more.
 	if invitation.UsedAt != nil {
-		http.Error(w, "this invitation has already been used", http.StatusGone)
+		writeError(w, http.StatusGone, "invitation_used", "this invitation has already been used")
 		return invitation, false
 	}
 	if !invitation.Usable(time.Now()) {
-		http.Error(w, "this invitation has expired", http.StatusGone)
+		writeError(w, http.StatusGone, "invitation_expired", "this invitation has expired")
 		return invitation, false
 	}
 	return invitation, true
@@ -54,7 +54,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	// Same ownership rule as moderation: you can only invite people to your own events.
 	event, err := s.events.GetOwned(r.Context(), chi.URLParam(r, "eventID"), organizerIDFrom(r))
 	if err != nil {
-		http.Error(w, "event not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
 
@@ -63,12 +63,12 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		ExpiresInDays int    `json:"expires_in_days"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 	input.RecipientName = strings.TrimSpace(input.RecipientName)
 	if len(input.RecipientName) > 100 {
-		http.Error(w, "the name is too long", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "the name is too long")
 		return
 	}
 	if input.ExpiresInDays <= 0 {
@@ -80,13 +80,13 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 
 	raw, hash, err := auth.NewToken()
 	if err != nil {
-		http.Error(w, "could not generate token", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not generate token")
 		return
 	}
 
 	expiresAt := time.Now().AddDate(0, 0, input.ExpiresInDays)
 	if err := s.invitations.Create(r.Context(), event.ID, hash, input.RecipientName, expiresAt); err != nil {
-		http.Error(w, "could not save invitation", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not save invitation")
 		return
 	}
 
@@ -101,13 +101,13 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listInvitations(w http.ResponseWriter, r *http.Request) {
 	event, err := s.events.GetOwned(r.Context(), chi.URLParam(r, "eventID"), organizerIDFrom(r))
 	if err != nil {
-		http.Error(w, "event not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
 
 	invitations, err := s.invitations.ListForEvent(r.Context(), event.ID)
 	if err != nil {
-		http.Error(w, "could not load invitations", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load invitations")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

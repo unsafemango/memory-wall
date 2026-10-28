@@ -17,23 +17,23 @@ func (s *Server) getMemories(w http.ResponseWriter, r *http.Request) {
 
 	event, err := s.events.GetBySlug(r.Context(), slug)
 	if errors.Is(err, pgx.ErrNoRows) {
-		http.Error(w, "event not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not load event", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load event")
 		return
 	}
 
 	memories, err := s.submissions.ListApprovedBySlug(r.Context(), slug)
 	if err != nil {
-		http.Error(w, "could not load memories", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load memories")
 		return
 	}
 
 	for i := range memories {
 		if err := s.signMediaURLs(r.Context(), &memories[i]); err != nil {
-			http.Error(w, "could not load memories", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal_error", "could not load memories")
 			return
 		}
 	}

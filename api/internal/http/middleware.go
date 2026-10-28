@@ -18,13 +18,13 @@ func (s *Server) requireOrganizer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(sessionCookie)
 		if err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 			return
 		}
 
 		organizerID, err := s.sessions.OrganizerIDFor(r.Context(), auth.HashToken(cookie.Value))
 		if err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 			return
 		}
 
@@ -42,7 +42,7 @@ func (s *Server) sameOriginWrites(next http.Handler) http.Handler {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
 			if origin := r.Header.Get("Origin"); origin != "" && origin != s.siteURL {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				writeError(w, http.StatusForbidden, "forbidden", "forbidden")
 				return
 			}
 		}

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { errorMessage } from "@/lib/api";
 import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -28,7 +29,7 @@ export default function InvitePage() {
     fetch(`${API_URL}/api/invitations/${token}`)
       .then(async (res) => {
         if (res.ok) setInvitation(await res.json());
-        else if (res.status === 410) setLinkError(`Sorry, ${await res.text()}. Ask whoever sent it for a new link.`);
+        else if (res.status === 410) setLinkError(`Sorry, ${await errorMessage(res)}. Ask whoever sent it for a new link.`);
         else setLinkError("This invitation link isn't valid. Ask whoever sent it for a new one.");
       })
       .catch(() => setLinkError("We couldn't reach the server. Try again in a minute."));
@@ -44,7 +45,7 @@ export default function InvitePage() {
         body: JSON.stringify({ sender_name: senderName, tone, detail }),
       });
       if (!res.ok) {
-        setSuggestionError(await res.text());
+        setSuggestionError(await errorMessage(res));
         return;
       }
       const data = await res.json();
@@ -72,7 +73,7 @@ export default function InvitePage() {
         body: JSON.stringify({ sender_name: senderName, message, ...media }),
       });
       if (!res.ok) {
-        setFormError(await res.text());
+        setFormError(await errorMessage(res));
         return;
       }
       setSubmitted(true);

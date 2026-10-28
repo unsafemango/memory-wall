@@ -11,7 +11,7 @@ import (
 
 func (s *Server) suggestMessage(w http.ResponseWriter, r *http.Request) {
 	if s.ai == nil {
-		http.Error(w, "writing help isn't set up on this server", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "writing help isn't set up on this server")
 		return
 	}
 
@@ -26,23 +26,23 @@ func (s *Server) suggestMessage(w http.ResponseWriter, r *http.Request) {
 		Detail     string `json:"detail"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 	input.SenderName = strings.TrimSpace(input.SenderName)
 	input.Detail = strings.TrimSpace(input.Detail)
 	if len(input.SenderName) > 100 || len(input.Detail) > 300 {
-		http.Error(w, "name or detail is too long", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "name or detail is too long")
 		return
 	}
 
 	suggestions, err := s.ai.SuggestMessages(r.Context(), invitation.RecipientName, input.SenderName, input.Tone, input.Detail)
 	if errors.Is(err, ai.ErrDeclined) {
-		http.Error(w, "couldn't write suggestions for that, try different wording", http.StatusUnprocessableEntity)
+		writeError(w, http.StatusUnprocessableEntity, "declined", "couldn't write suggestions for that, try different wording")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not generate suggestions", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "upstream_error", "could not generate suggestions")
 		return
 	}
 

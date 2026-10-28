@@ -13,18 +13,18 @@ func (s *Server) listSubmissions(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventID")
 	if _, err := s.events.GetOwned(r.Context(), eventID, organizerIDFrom(r)); err != nil {
 		// 404 rather than 403 for someone else's event, so IDs can't be probed.
-		http.Error(w, "event not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
 
 	items, err := s.submissions.ListForOwner(r.Context(), eventID, organizerIDFrom(r))
 	if err != nil {
-		http.Error(w, "could not load submissions", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load submissions")
 		return
 	}
 	for i := range items {
 		if err := s.signMediaURLs(r.Context(), &items[i].Memory); err != nil {
-			http.Error(w, "could not load submissions", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal_error", "could not load submissions")
 			return
 		}
 	}
@@ -44,11 +44,11 @@ func (s *Server) rejectSubmission(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setSubmissionStatus(w http.ResponseWriter, r *http.Request, status string) {
 	err := s.submissions.UpdateStatus(r.Context(), chi.URLParam(r, "id"), organizerIDFrom(r), status)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "submission not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "submission not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not update submission", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not update submission")
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -57,11 +57,11 @@ func (s *Server) setSubmissionStatus(w http.ResponseWriter, r *http.Request, sta
 func (s *Server) deleteSubmission(w http.ResponseWriter, r *http.Request) {
 	keys, err := s.submissions.DeleteForOwner(r.Context(), chi.URLParam(r, "id"), organizerIDFrom(r))
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "submission not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "submission not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "could not delete submission", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not delete submission")
 		return
 	}
 
