@@ -90,14 +90,34 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"id": id, "slug": input.Slug})
 }
 
+// shareInfo is the share link as the event's owner sees it. Only owner
+// endpoints include it; public responses never show the token.
+type shareInfo struct {
+	ShareURL     string `json:"share_url"`
+	ShareEnabled bool   `json:"share_enabled"`
+}
+
+func (s *Server) shareInfoFor(e store.Event) shareInfo {
+	return shareInfo{ShareURL: s.siteURL + "/invite/" + e.ShareToken, ShareEnabled: e.ShareEnabled}
+}
+
 func (s *Server) listMyEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := s.events.ListByOwner(r.Context(), organizerIDFrom(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not load events")
 		return
 	}
+
+	type listedEvent struct {
+		store.EventSummary
+		shareInfo
+	}
+	out := make([]listedEvent, len(events))
+	for i, e := range events {
+		out[i] = listedEvent{e, s.shareInfoFor(e.Event)}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(events)
+	json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) getMyEvent(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +131,58 @@ func (s *Server) getMyEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(event)
+	json.NewEncoder(w).Encode(struct {
+		store.Event
+		shareInfo
+	}{event, s.shareInfoFor(event)})
+}
+
+// setShareLink turns the event's share link on or off.
+func (s *Server) setShareLink(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "send {\"enabled\": true} or false")
+		return
+	}
+
+	eventID, ownerID := chi.URLParam(r, "eventID"), organizerIDFrom(r)
+	err := s.events.SetShareEnabled(r.Context(), eventID, ownerID, *input.Enabled)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not update the share link")
+		return
+	}
+	s.writeShareInfo(w, r, eventID, ownerID)
+}
+
+// resetShareLink replaces the event's share link, so the old one stops working.
+func (s *Server) resetShareLink(w http.ResponseWriter, r *http.Request) {
+	eventID, ownerID := chi.URLParam(r, "eventID"), organizerIDFrom(r)
+	_, err := s.events.ResetShareToken(r.Context(), eventID, ownerID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not reset the share link")
+		return
+	}
+	s.writeShareInfo(w, r, eventID, ownerID)
+}
+
+func (s *Server) writeShareInfo(w http.ResponseWriter, r *http.Request, eventID, ownerID string) {
+	event, err := s.events.GetOwned(r.Context(), eventID, ownerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load the share link")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.shareInfoFor(event))
 }
 
 func (s *Server) updateEvent(w http.ResponseWriter, r *http.Request) {
