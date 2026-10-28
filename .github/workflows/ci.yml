@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: memorywall
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: memorywall
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U memorywall -d memorywall"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://memorywall:devpassword@localhost:5432/memorywall?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - name: Apply migrations and seed data
+        run: |
+          docker run --rm --network host -v "$PWD/migrations:/migrations:ro" \
+            migrate/migrate:v4.18.3 -path=/migrations -database="$DATABASE_URL" up
+          psql "$DATABASE_URL" -f scripts/seed.sql
+      - run: go test ./...
+      - run: go build ./...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - name: Type-check
+        run: npx next typegen && npx tsc --noEmit
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
