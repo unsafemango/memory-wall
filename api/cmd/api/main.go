@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/unsafemango/memory-wall/internal/ai"
 	httpapi "github.com/unsafemango/memory-wall/internal/http"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
@@ -34,10 +35,18 @@ func main() {
 		log.Fatalf("ping database: %v", err)
 	}
 
+	var aiClient *ai.Client
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		aiClient = ai.NewClient(key)
+	} else {
+		log.Println("ANTHROPIC_API_KEY is not set, the writing helper is turned off")
+	}
+
 	server := httpapi.NewServer(httpapi.Deps{
 		Events:      store.NewEventStore(db),
 		Invitations: store.NewInvitationStore(db),
 		Submissions: store.NewSubmissionStore(db),
+		AI:          aiClient,
 		SiteURL:     siteURL,
 	})
 

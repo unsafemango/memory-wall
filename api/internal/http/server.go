@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/unsafemango/memory-wall/internal/ai"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
 
@@ -14,6 +15,7 @@ type Server struct {
 	events      *store.EventStore
 	invitations *store.InvitationStore
 	submissions *store.SubmissionStore
+	ai          *ai.Client
 	siteURL     string
 }
 
@@ -22,6 +24,9 @@ type Deps struct {
 	Events      *store.EventStore
 	Invitations *store.InvitationStore
 	Submissions *store.SubmissionStore
+	// AI is nil when no ANTHROPIC_API_KEY is configured; the writing helper
+	// endpoint then answers 503 instead of failing every request.
+	AI *ai.Client
 	// SiteURL is the web app's origin, e.g. http://localhost:3000. It's the
 	// only origin the browser is allowed to call the API from.
 	SiteURL string
@@ -32,6 +37,7 @@ func NewServer(d Deps) *Server {
 		events:      d.Events,
 		invitations: d.Invitations,
 		submissions: d.Submissions,
+		ai:          d.AI,
 		siteURL:     d.SiteURL,
 	}
 }
@@ -44,6 +50,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/api/healthz", healthz)
 	r.Get("/api/invitations/{token}", s.getInvitation)
 	r.Post("/api/invitations/{token}/submissions", s.createSubmission)
+	r.Post("/api/invitations/{token}/suggest-message", s.suggestMessage)
 	r.Get("/api/events/{slug}/memories", s.getMemories)
 
 	return r
