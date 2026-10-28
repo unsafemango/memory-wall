@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/unsafemango/memory-wall/internal/ai"
 )
 
@@ -17,15 +15,8 @@ func (s *Server) suggestMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := chi.URLParam(r, "token")
-
-	invitation, err := s.invitations.GetByToken(r.Context(), token)
-	if errors.Is(err, pgx.ErrNoRows) {
-		http.Error(w, "invitation not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "could not look up invitation", http.StatusInternalServerError)
+	invitation, ok := s.invitationFromRequest(w, r)
+	if !ok {
 		return
 	}
 

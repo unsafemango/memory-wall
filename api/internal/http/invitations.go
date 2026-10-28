@@ -7,18 +7,31 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/unsafemango/memory-wall/internal/auth"
+	"github.com/unsafemango/memory-wall/internal/store"
 )
 
-func (s *Server) getInvitation(w http.ResponseWriter, r *http.Request) {
+// invitationFromRequest looks up the invitation for the {token} in the URL.
+// It hashes the token first, since only hashes are stored. On failure it
+// writes the error response and returns false.
+func (s *Server) invitationFromRequest(w http.ResponseWriter, r *http.Request) (store.Invitation, bool) {
 	token := chi.URLParam(r, "token")
 
-	invitation, err := s.invitations.GetByToken(r.Context(), token)
+	invitation, err := s.invitations.GetByTokenHash(r.Context(), auth.HashToken(token))
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.Error(w, "invitation not found", http.StatusNotFound)
-		return
+		return invitation, false
 	}
 	if err != nil {
 		http.Error(w, "could not look up invitation", http.StatusInternalServerError)
+		return invitation, false
+	}
+	return invitation, true
+}
+
+func (s *Server) getInvitation(w http.ResponseWriter, r *http.Request) {
+	invitation, ok := s.invitationFromRequest(w, r)
+	if !ok {
 		return
 	}
 

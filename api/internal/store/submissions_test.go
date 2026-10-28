@@ -25,7 +25,8 @@ func TestSubmissionRoundTrip(t *testing.T) {
 	// Find the seeded event and invitation.
 	var eventID, invitationID string
 	err = db.QueryRow(ctx,
-		`SELECT i.event_id, i.id FROM invitations i WHERE i.token_hash = 'dev-token-plaintext'`,
+		`SELECT i.event_id, i.id FROM invitations i
+		 WHERE i.token_hash = encode(sha256('dev-token-plaintext'::bytea), 'hex')`,
 	).Scan(&eventID, &invitationID)
 	if err != nil {
 		t.Fatalf("find seed invitation (did you run scripts/seed.sql?): %v", err)

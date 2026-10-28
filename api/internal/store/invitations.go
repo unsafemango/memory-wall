@@ -20,10 +20,13 @@ func NewInvitationStore(db *pgxpool.Pool) *InvitationStore {
 	return &InvitationStore{db: db}
 }
 
-// GetByToken compares the raw token for now; Phase 5 switches this to a hash
-func (s *InvitationStore) GetByToken(ctx context.Context, token string) (Invitation, error) {
+// GetByTokenHash looks an invitation up by the SHA-256 hash of its token.
+// Raw tokens are never stored.
+func (s *InvitationStore) GetByTokenHash(ctx context.Context, tokenHash string) (Invitation, error) {
 	var inv Invitation
-	err := s.db.QueryRow(ctx, `SELECT id, event_id, COALESCE(recipient_name, '') FROM invitations WHERE token_hash = $1`, token).Scan(&inv.ID, &inv.EventID, &inv.RecipientName)
-
+	err := s.db.QueryRow(ctx,
+		`SELECT id, event_id, COALESCE(recipient_name, '') FROM invitations WHERE token_hash = $1`,
+		tokenHash,
+	).Scan(&inv.ID, &inv.EventID, &inv.RecipientName)
 	return inv, err
 }
