@@ -4,7 +4,7 @@ A private memory wall for any event, a birthday, a wedding, a graduation, a goin
 
 ## What it does
 
-- **Organizers** sign up, create an event with its own link (`/sarah-30th`), and send each guest a personal invitation link.
+- **Organizers** sign up and create an event with its own page (`/sarah-30th`). They invite guests with one share link for everyone (a group chat, an email, a flyer), or with personal links made one at a time or from a pasted list of names.
 - **Guests** open their link, write a note or attach a photo or video, and can ask for help writing (three drafts in a tone they pick, optionally built around a detail they type).
 - **Moderation** is on by default: submissions wait in the organizer's dashboard until they're approved, rejected, or deleted.
 - **The event page** shows every approved memory as note cards and polaroids, followed by the organizer's closing message.
@@ -14,7 +14,7 @@ A private memory wall for any event, a birthday, a wedding, a graduation, a goin
 - **API:** Go, Chi router, Postgres (pgx, no ORM), `log/slog` JSON logs
 - **Web:** Next.js (App Router), TypeScript, Tailwind
 - **Storage:** S3-compatible (MinIO locally, Cloudflare R2 in production), presigned direct uploads
-- **Auth:** Organizer accounts (email + Argon2id-hashed password, Postgres-backed sessions) for creating events and moderating; single-use invitation tokens for contributors
+- **Auth:** Organizer accounts (email + Argon2id-hashed password, Postgres-backed sessions) for creating events and moderating; a reusable share link per event plus single-use personal invitation links for contributors
 - **AI:** Claude (Opus 5.5) through the official Go SDK, called only from the server
 - **Background jobs:** a Postgres table and a worker goroutine; videos get a thumbnail, duration, and dimensions from ffmpeg
 
@@ -36,11 +36,12 @@ The event page is a Server Component, so it fetches memories on the server. Ever
 - **Uploads go straight to the bucket.** The API checks the file type and size, then signs a 5-minute PUT URL for a key it generates (`events/<event-id>/<uuid>.jpg`). The browser uploads to the bucket directly, so the API only handles small JSON requests. Before saving the submission, the API checks that the object exists, belongs to the invitation's event, and is within the size limit.
 - **The bucket is private.** Photos and videos come back as signed GET links that expire after an hour.
 - **The job queue is a Postgres table.** At this scale it's simpler than Kafka or Redis and keeps one database to run. Workers claim jobs with `FOR UPDATE SKIP LOCKED`, failed jobs retry with a growing delay up to three times, and jobs left running by a restart are picked up again. A video's job is queued in the same transaction that saves it.
-- **Tokens are stored as hashes.** Session cookies and invitation links are 32 random bytes. Only their SHA-256 hash goes in the database, so a leaked backup can't be used to log in or submit. Passwords use Argon2id instead, because unlike random tokens they're guessable.
-- **Invitations are single-use.** Saving a submission marks the invitation used in the same transaction, so two requests racing on one link can't both succeed. Expired or used links return `410 Gone` with a clear message.
+- **Two kinds of invite link.** Each event has a **share link** anyone can use as many times as they like. It's the easy way to invite a big group, and moderation keeps strangers off the page if it spreads. The organizer can turn it off, or reset it so the old link stops working. **Personal links** greet a guest by name, work once, and show who has posted. Organizers can make up to 200 at a time from a list of names and download them as a CSV.
+- **Tokens are stored as hashes.** Session cookies and personal invitation links are 32 random bytes. Only their SHA-256 hash goes in the database, so a leaked backup can't be used to log in or submit. Passwords use Argon2id instead, because unlike random tokens they're guessable. Share tokens are the exception: they're stored as-is so the organizer can copy the link again, which is acceptable for a link that's meant to be passed around and can be reset.
+- **Personal links are single-use.** Saving a submission marks the invitation used in the same transaction, so two requests racing on one link can't both succeed. Expired, used, or turned-off links return `410 Gone` with a clear message.
 - **Ownership checks live in the SQL.** Every organizer query joins on `events.owner_id`, and someone else's event or submission returns `404`, not `403`, so IDs can't be probed.
 - **CSRF.** The session cookie is `HttpOnly` and `SameSite=Lax`, CORS only allows the web app's origin, and state-changing requests with a different `Origin` header are rejected.
-- **Rate limits** are in-memory token buckets: per IP on login and signup, and per IP and per invitation on guest endpoints, with a tighter limit on the paid AI endpoint. This works for a single API instance. Running several would need a shared store (Redis, or a Postgres table).
+- **Rate limits** are in-memory token buckets: per IP on login and signup, and per IP and per link-and-IP on guest endpoints (so a hundred guests on one share link each get their own allowance), with a tighter limit on the paid AI endpoint. This works for a single API instance. Running several would need a shared store (Redis, or a Postgres table).
 - **Errors** always come back as `{"error": {"code": "...", "message": "..."}}`.
 
 ## Project structure
@@ -105,7 +106,7 @@ Requires Docker.
 docker exec -i postgres psql -U memorywall -d memorywall < api/scripts/seed.sql
 ```
 
-Invitations are single-use, so delete the invitation row and run it again for a fresh one.
+Personal invitations are single-use, so delete the invitation row and run it again for a fresh one. Every event also has a reusable share link, shown on its Manage page.
 
 ### Running the API outside Docker
 
