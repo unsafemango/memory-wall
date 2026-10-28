@@ -46,8 +46,26 @@ func (s *Server) getInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Guests see which event they're writing for, and whether their memory
+	// will need the organizer's approval before it shows up.
+	event, err := s.events.GetByID(r.Context(), invitation.EventID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not look up event")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(invitation)
+	json.NewEncoder(w).Encode(map[string]any{
+		"id":             invitation.ID,
+		"recipient_name": invitation.RecipientName,
+		"expires_at":     invitation.ExpiresAt,
+		"event": map[string]any{
+			"title":              event.Title,
+			"slug":               event.Slug,
+			"event_date":         event.EventDate,
+			"moderation_enabled": event.ModerationEnabled,
+		},
+	})
 }
 
 func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
