@@ -14,9 +14,15 @@ export async function errorMessage(res: Response): Promise<string> {
   const text = await res.text();
   try {
     const body = JSON.parse(text);
-    if (body?.error?.message) return body.error.message;
+    if (body?.error?.message) return capitalize(body.error.message);
   } catch {
     // Not JSON, use the plain text.
   }
-  return text.trim() || `Something went wrong (${res.status}).`;
+  return capitalize(text.trim()) || `Something went wrong (${res.status}).`;
+}
+
+// API messages are lowercase so they read well inside sentences; capitalize
+// them when they're shown on their own.
+function capitalize(text: string) {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
