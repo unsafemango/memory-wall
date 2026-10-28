@@ -15,6 +15,10 @@ export default function InvitePage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [detail, setDetail] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
 
   // Check the link first, so a bad link fails before anyone writes a message.
   useEffect(() => {
@@ -25,6 +29,28 @@ export default function InvitePage() {
       })
       .catch(() => setLinkError("We couldn't reach the server. Try again in a minute."));
   }, [token]);
+
+  async function getSuggestions(tone: string) {
+    setLoadingSuggestions(true);
+    setSuggestionError("");
+    try {
+      const res = await fetch(`${API_URL}/api/invitations/${token}/suggest-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender_name: senderName, tone, detail }),
+      });
+      if (!res.ok) {
+        setSuggestionError(await res.text());
+        return;
+      }
+      const data = await res.json();
+      setSuggestions(data.suggestions || []);
+    } catch {
+      setSuggestionError("We couldn't reach the server. Try again in a minute.");
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,6 +104,45 @@ export default function InvitePage() {
             maxLength={100}
           />
         </label>
+        <div className="flex flex-col gap-2 rounded border p-3">
+          <p className="font-medium">Need help writing something?</p>
+          <input
+            className="rounded border p-2"
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            placeholder="Optional: mention something specific, an inside joke, a memory..."
+            maxLength={300}
+          />
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["heartfelt", "Heartfelt"],
+              ["funny", "Funny"],
+              ["short", "Short and sweet"],
+            ].map(([tone, label]) => (
+              <button
+                key={tone}
+                type="button"
+                disabled={loadingSuggestions}
+                onClick={() => getSuggestions(tone)}
+                className="rounded-full border px-3 py-1 disabled:opacity-50"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {loadingSuggestions && <p>Thinking…</p>}
+          {suggestionError && <p className="text-red-600">{suggestionError}</p>}
+          {suggestions.map((s, i) => (
+            <button
+              type="button"
+              key={i}
+              onClick={() => setMessage(s)}
+              className="rounded border p-2 text-left hover:bg-black/5"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
         <label className="flex flex-col gap-1">
           Your message
           <textarea
