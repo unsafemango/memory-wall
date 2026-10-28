@@ -53,20 +53,40 @@ func (s *EventStore) Create(ctx context.Context, e Event) (string, error) {
 	return id, mapDuplicate(err)
 }
 
-// ListByOwner returns an organizer's events, newest first.
-func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]Event, error) {
+// EventSummary is an event in the organizer's list, with how many
+// submissions are waiting and how many are live.
+type EventSummary struct {
+	Event
+	PendingCount  int `json:"pending_count"`
+	ApprovedCount int `json:"approved_count"`
+}
+
+// ListByOwner returns an organizer's events with submission counts, newest
+// first.
+func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSummary, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT `+eventColumns+` FROM events WHERE owner_id = $1 ORDER BY created_at DESC`,
+		`SELECT e.id, COALESCE(e.owner_id::text, ''), e.title, e.slug, COALESCE(e.event_date::text, ''),
+		        COALESCE(e.closing_message, ''), e.moderation_enabled,
+		        COUNT(s.id) FILTER (WHERE s.status = 'pending'),
+		        COUNT(s.id) FILTER (WHERE s.status = 'approved')
+		 FROM events e
+		 LEFT JOIN submissions s ON s.event_id = e.id
+		 WHERE e.owner_id = $1
+		 GROUP BY e.id
+		 ORDER BY e.created_at DESC`,
 		ownerID,
 	)
 	if err != nil {
 		return nil, err
 	}
-	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Event, error) {
-		return scanEvent(row)
+	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EventSummary, error) {
+		var e EventSummary
+		err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage,
+			&e.ModerationEnabled, &e.PendingCount, &e.ApprovedCount)
+		return e, err
 	})
 	if events == nil {
-		events = []Event{}
+		events = []EventSummary{}
 	}
 	return events, err
 }
