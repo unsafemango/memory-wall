@@ -422,3 +422,22 @@ h3 {
 .wall-button:disabled {
   opacity: 0.6;
 }
+
+/* Home page */
+.hero-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+a.wall-button {
+  text-decoration: none;
+  margin-top: 0;
+}
+.wall-link {
+  font-weight: 600;
+  color: var(--purple-deep);
+}

@@ -1,15 +1,21 @@
-"use client";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Confetti } from "./[slug]/Confetti";
 
 export default function Home() {
-  const [status, setStatus] = useState("checking...");
-
-  useEffect(() => {
-    fetch("http://localhost:8080/api/healthz")
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status))
-      .catch(() => setStatus("unreachable"));
-  }, []);
-
-  return <main style={{ padding: 40 }}>API status: {status}</main>;
+  return (
+    <main className="wall">
+      <section className="hero">
+        <Confetti />
+        <span className="hero-eyebrow">Birthdays, weddings, send-offs</span>
+        <h1 className="name">Memory Wall</h1>
+        <p className="hero-sub">
+          Send friends a link. They leave a note, photo, or video. You get everything on one page to share.
+        </p>
+        <div className="hero-actions">
+          <Link className="wall-button" href="/signup">Start a wall</Link>
+          <Link className="wall-link" href="/login">Log in</Link>
+        </div>
+      </section>
+    </main>
+  );
 }
