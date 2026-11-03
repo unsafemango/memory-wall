@@ -121,11 +121,13 @@ Then, in `api/`, set `DATABASE_URL` and `S3_ENDPOINT` to use `localhost` instead
 
 ### Migrations
 
-Compose applies migrations automatically. To run them by hand, with [golang-migrate](https://github.com/golang-migrate/migrate) installed (`brew install golang-migrate`), from `api/`:
+Compose applies migrations automatically. To run them by hand, from `api/`:
 
 ```bash
-migrate -database "postgres://memorywall:devpassword@localhost:5432/memorywall?sslmode=disable" -path migrations up
+DATABASE_URL="postgres://memorywall:devpassword@localhost:5432/memorywall?sslmode=disable" go run ./cmd/migrate up
 ```
+
+The migration files are embedded in that command, and the same command runs on each deploy. `go run ./cmd/migrate version` shows where the database is.
 
 New schema changes always go in a new numbered migration. Don't edit one that has already run.
 
@@ -152,7 +154,7 @@ API (`api/.env`):
 | `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Bucket settings and credentials |
 | `ANTHROPIC_API_KEY`   | Turns on the writing helper                                         |
 | `INVITATION_LINK_KEY` | 64 hex characters (`openssl rand -hex 32`). Encrypts personal invite links so organizers can copy them again. Keep it secret and don't change it, or older links can't be shown |
-| `TRUST_PROXY_HEADERS` | `true` behind a proxy you control, so rate limits use the real client IP |
+| `TRUST_PROXY_HEADERS` | `true` behind a proxy you control, so rate limits use the real client IP (set in `fly.toml`) |
 
 Web (`web/.env`):
 
@@ -163,17 +165,86 @@ Web (`web/.env`):
 
 ## Deploying
 
-A good setup is managed Postgres (Neon, Supabase, or Railway), the API on Fly.io or Railway, the web app on Vercel, and Cloudflare R2 for storage.
+The setup is the web app on **Vercel**, the API on **Fly.io**, Postgres on **Neon**, and files on **Cloudflare R2**, under one domain you own:
 
-- **R2 CORS:** allow the web app's origin to `PUT` and `GET`:
+- `app.yourdomain.com`: the web app (Vercel)
+- `api.yourdomain.com`: the API (Fly.io)
 
-  ```json
-  [{ "AllowedOrigins": ["https://your-app.example"], "AllowedMethods": ["PUT", "GET"], "AllowedHeaders": ["*"] }]
-  ```
+Using two subdomains of the same domain matters. Browsers count them as the same site, so the login cookie works. Separate default domains (`*.vercel.app` and `*.fly.dev`) would break logins. Replace `yourdomain.com` below with your domain.
 
-- **Session cookie across domains:** browsers won't send the `SameSite=Lax` cookie from `your-app.vercel.app` to `your-api.fly.dev`. Set `API_URL` to the API's address and `NEXT_PUBLIC_API_URL` to an empty string when building the web app, and Next.js proxies `/api/*` to the API so the browser stays on one origin. Then set `SITE_URL` on the API to the web app's URL and `TRUST_PROXY_HEADERS=true`.
-- **Migrations** should run as part of each deploy, before the new API version starts.
-- Set `ANTHROPIC_API_KEY` as a secret on the API host.
+### 1. Database: Neon
+
+1. Create a project in a region close to where the API will run.
+2. Copy the **direct** connection string, the one whose host doesn't contain `-pooler`. Live updates use Postgres `LISTEN`, which doesn't work through Neon's connection pooler. Make sure it ends with `?sslmode=require`.
+
+There's no need to run migrations yourself. The API's deploy does it.
+
+### 2. Files: Cloudflare R2
+
+1. Create a bucket named `memory-wall`.
+2. In the bucket's **Settings → CORS policy**, paste [`deploy/r2-cors.json`](deploy/r2-cors.json) with your web app's address in `AllowedOrigins`.
+3. Under **R2 → Manage API tokens**, create a token with **Object Read & Write** on that bucket. Note the access key ID, the secret access key, and the S3 endpoint, `https://<account-id>.r2.cloudflarestorage.com`.
+
+### 3. API: Fly.io
+
+Install [flyctl](https://fly.io/docs/flyctl/install/), run `fly auth login`, then from `api/`:
+
+```bash
+fly apps create memory-wall-api
+```
+
+If that name is taken, pick another and change `app` in [`api/fly.toml`](api/fly.toml) to match. Then set the secrets, filling in your values:
+
+```bash
+fly secrets set \
+  DATABASE_URL="postgres://...neon.tech/neondb?sslmode=require" \
+  SITE_URL="https://app.yourdomain.com" \
+  S3_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com" \
+  S3_PUBLIC_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com" \
+  S3_ACCESS_KEY="..." \
+  S3_SECRET_KEY="..." \
+  S3_BUCKET="memory-wall" \
+  INVITATION_LINK_KEY="$(openssl rand -hex 32)" \
+  ANTHROPIC_API_KEY="..."
+```
+
+`INVITATION_LINK_KEY` must never change after people start using the app, or older personal links can no longer be shown. If you'll ever need to set up the API again, generate the key yourself first and keep a copy in a password manager.
+
+Deploy, then give it your subdomain:
+
+```bash
+fly deploy
+fly certs add api.yourdomain.com
+```
+
+`fly certs add` prints the DNS records to add at your domain's DNS provider. Each deploy runs `/bin/migrate up` before starting the new version (`release_command` in `fly.toml`). If a migration fails, the old version keeps running. Check it's up with `curl https://api.yourdomain.com/api/healthz`.
+
+### 4. Web app: Vercel
+
+1. Import the GitHub repo and set **Root Directory** to `web`. Vercel detects Next.js.
+2. Add one environment variable, `NEXT_PUBLIC_API_URL` = `https://api.yourdomain.com`, then deploy.
+3. In **Settings → Domains**, add `app.yourdomain.com` and create the DNS record Vercel shows.
+
+From then on, Vercel redeploys the web app on every push to `main`.
+
+### 5. Automatic API deploys
+
+The CI workflow deploys the API to Fly after the tests pass on `main`. To turn it on, create a token with `fly tokens create deploy -a memory-wall-api` and add it to the GitHub repo as an Actions secret named `FLY_API_TOKEN` (**Settings → Secrets and variables → Actions**). Until then, that CI step just skips.
+
+### 6. Check it works
+
+Sign up at `https://app.yourdomain.com`, create an event, and open its share link in a private window. Then:
+
+1. Leave a note and a photo as a guest.
+2. Back on the manage page, check the memory shows up without a reload.
+3. Approve it, and check it appears on the event page, also without a reload.
+4. Upload a short video and check that its thumbnail appears a few seconds later.
+
+### Good to know
+
+- Fly may start two machines on the first deploy. That's fine: the job worker and live updates work across machines. Rate limits are counted per machine, so `fly scale count 1` keeps them exact.
+- Back up the database with Neon's point-in-time restore, and check its retention on your plan.
+- Logs: `fly logs` for the API, and the Vercel dashboard for the web app.
 
 ## Notes
 
