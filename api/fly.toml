@@ -1,0 +1,52 @@
+# Fly.io config for the Go API. Deploy from this folder with `fly deploy`.
+# Secrets (DATABASE_URL, S3 keys, INVITATION_LINK_KEY, ANTHROPIC_API_KEY)
+# are set with `fly secrets set`, never in this file. See the README.
+
+# App names are global on Fly. If this one is taken, pick another and use it
+# everywhere the README mentions memory-wall-api.
+app = "memory-wall-api"
+# Toronto. Put it near your Neon database's region: `fly platform regions`.
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Applies new database migrations before the new version starts. If it
+  # fails, the deploy stops and the old version keeps running.
+  release_command = "/bin/migrate up"
+
+[env]
+  # Fly's proxy sits in front of the API, so rate limits need the client IP
+  # from X-Forwarded-For.
+  TRUST_PROXY_HEADERS = "true"
+  S3_REGION = "auto"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The API runs a job worker and holds open live-update streams, so it must
+  # never be stopped for being idle.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Every open page watching for live updates holds a connection. Fly's
+  # default limit (25) would turn visitors away during an event.
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 800
+    hard_limit = 1000
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "15s"
+    method = "GET"
+    path = "/api/healthz"
+    timeout = "5s"
+
+[[vm]]
+  # ffmpeg needs headroom when it processes a video.
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
