@@ -1,0 +1,8 @@
+[
+  {
+    "AllowedOrigins": ["https://app.yourdomain.com"],
+    "AllowedMethods": ["PUT", "GET"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3600
+  }
+]
