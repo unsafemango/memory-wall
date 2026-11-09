@@ -4,7 +4,7 @@ Memory Wall is a private, shared page for any occasion: a birthday, a wedding, a
 
 ## Features
 
-- **Events:** organizers create an event with its own page, date, and closing message.
+- **Events:** organizers create an event with its own page, date, and closing message. The occasion tailors the page's wording and the writing assistant.
 - **Invitations:** a reusable share link for large groups, plus single-use personal links created individually or in bulk from a list of names.
 - **Moderation:** submissions are held for review by default and can be approved, hidden, or deleted.
 - **Photo and video uploads:** files upload directly to object storage, and videos are processed in the background.

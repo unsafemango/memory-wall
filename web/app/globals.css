@@ -656,10 +656,15 @@ a.wall-button {
   gap: 12px;
 }
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-fredoka), var(--font-quicksand), sans-serif;
   font-size: 1.25rem;
   font-weight: 600;
   text-decoration: none;
+}
+.brand span {
   background: linear-gradient(90deg, var(--pink-deep), var(--purple));
   -webkit-background-clip: text;
   background-clip: text;
@@ -1516,4 +1521,10 @@ textarea.input {
 /* Occasion picker in the event form */
 .occasion-choices {
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+
+.hero-logo {
+  position: relative;
+  line-height: 0;
+  filter: drop-shadow(0 10px 18px rgba(109, 40, 217, 0.3));
 }

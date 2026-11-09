@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Confetti } from "./[slug]/Confetti";
+import { Logo } from "./components/Logo";
 
 const steps = [
   {
@@ -21,6 +22,7 @@ export default function Home() {
     <main className="wall">
       <section className="hero">
         <Confetti />
+        <div className="hero-logo"><Logo size={72} /></div>
         <span className="hero-eyebrow">Birthdays, weddings, send-offs</span>
         <h1 className="name">Memory Wall</h1>
         <p className="hero-sub">

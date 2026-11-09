@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { Logo } from "./Logo";
 
 // AppHeader is the top bar on organizer pages. Logged-in pages get a link
 // back to the dashboard and a log out button; login and signup link to each
@@ -18,7 +19,8 @@ export function AppHeader({ mode }: { mode: "signed-in" | "login" | "signup" }) 
     <header className="app-header">
       <div className="app-header-inner">
         <Link href={mode === "signed-in" ? "/dashboard" : "/"} className="brand">
-          Memory Wall
+          <Logo />
+          <span>Memory Wall</span>
         </Link>
         <nav className="app-nav" aria-label="Account">
           {mode === "signed-in" && (
