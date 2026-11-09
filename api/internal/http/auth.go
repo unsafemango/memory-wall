@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/unsafemango/memory-wall/internal/auth"
+	"github.com/unsafemango/memory-wall/internal/email"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
 
@@ -56,6 +59,7 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.sendConfirmation(r.Context(), organizerID, email, displayName)
 	s.startSession(w, r, organizerID)
 }
 
@@ -171,6 +175,9 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "could not update your account")
 		return
 	}
+	if email != organizer.Email {
+		s.sendConfirmation(r.Context(), organizer.ID, email, displayName)
+	}
 	s.me(w, r)
 }
 
@@ -218,6 +225,104 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.sessions.DeleteOthers(r.Context(), organizer.ID, auth.HashToken(cookie.Value)); err != nil {
 		s.logger.Error("end other sessions", "organizer_id", organizer.ID, "error", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+const confirmationLifetime = 7 * 24 * time.Hour
+
+// sendConfirmation emails a link that confirms an address. A failure is only
+// logged, since the organizer can ask for another from their account page.
+func (s *Server) sendConfirmation(ctx context.Context, organizerID, address, name string) bool {
+	if !s.mailer.Enabled() {
+		return false
+	}
+	raw, hash, err := auth.NewToken()
+	if err == nil {
+		err = s.organizers.CreateEmailConfirmation(ctx, hash, organizerID, address, time.Now().Add(confirmationLifetime))
+	}
+	if err != nil {
+		s.logger.Error("create email confirmation", "organizer_id", organizerID, "error", err)
+		return false
+	}
+	msg, err := email.Confirmation(address, name, s.siteURL+"/confirm-email/"+raw)
+	if err == nil {
+		err = s.mailer.Send(ctx, msg)
+	}
+	if err != nil {
+		s.logger.Error("send confirmation email", "organizer_id", organizerID, "error", err)
+		return false
+	}
+	return true
+}
+
+// resendConfirmation sends the logged-in organizer a new confirmation link.
+func (s *Server) resendConfirmation(w http.ResponseWriter, r *http.Request) {
+	organizer, err := s.organizers.GetByID(r.Context(), organizerIDFrom(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load your account")
+		return
+	}
+	if organizer.EmailVerified {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if !s.sendConfirmation(r.Context(), organizer.ID, organizer.Email, organizer.DisplayName) {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "we couldn't send the email, try again in a minute")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// confirmEmail uses a link from a confirmation email. It doesn't need a login,
+// since people often open the email on another device.
+func (s *Server) confirmEmail(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		return
+	}
+	err := s.organizers.ConfirmEmail(r.Context(), auth.HashToken(input.Token))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusGone, "link_expired", "this link has expired or was already used")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not confirm your email")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setNotifications turns the logged-in organizer's new-memory emails on or off.
+func (s *Server) setNotifications(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "send {\"enabled\": true} or false")
+		return
+	}
+	if err := s.organizers.SetNotifications(r.Context(), organizerIDFrom(r), *input.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not update your notifications")
+		return
+	}
+	s.me(w, r)
+}
+
+// unsubscribe uses the link in a notification email. It takes no login, so
+// turning off emails takes one click from any device.
+func (s *Server) unsubscribe(w http.ResponseWriter, r *http.Request) {
+	err := s.organizers.Unsubscribe(r.Context(), chi.URLParam(r, "token"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "this link isn't valid")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not update your notifications")
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

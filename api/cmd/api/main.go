@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/ai"
 	"github.com/unsafemango/memory-wall/internal/auth"
+	"github.com/unsafemango/memory-wall/internal/email"
 	httpapi "github.com/unsafemango/memory-wall/internal/http"
 	"github.com/unsafemango/memory-wall/internal/jobs"
 	"github.com/unsafemango/memory-wall/internal/live"
@@ -67,6 +68,11 @@ func main() {
 		logger.Warn("INVITATION_LINK_KEY is not set, personal invite links can only be copied when they're made")
 	}
 
+	mailer := email.New(os.Getenv("RESEND_API_KEY"), os.Getenv("EMAIL_FROM"), os.Getenv("RESEND_BASE_URL"))
+	if !mailer.Enabled() {
+		logger.Warn("RESEND_API_KEY or EMAIL_FROM is not set, email is turned off")
+	}
+
 	files := storage.New(storage.Config{
 		Endpoint:       os.Getenv("S3_ENDPOINT"),
 		PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
@@ -93,6 +99,7 @@ func main() {
 		Logger:      logger,
 		LinkSealer:  linkSealer,
 		Hub:         hub,
+		Mailer:      mailer,
 	})
 
 	// The job worker runs alongside the HTTP server for the life of the program.

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/unsafemango/memory-wall/internal/ai"
 	"github.com/unsafemango/memory-wall/internal/auth"
+	"github.com/unsafemango/memory-wall/internal/email"
 	"github.com/unsafemango/memory-wall/internal/live"
 	"github.com/unsafemango/memory-wall/internal/storage"
 	"github.com/unsafemango/memory-wall/internal/store"
@@ -31,6 +32,7 @@ type Server struct {
 	logger      *slog.Logger
 	sealer      *auth.Sealer
 	hub         *live.Hub
+	mailer      *email.Client
 	// streamsDone is closed on shutdown to end open live update streams.
 	streamsDone chan struct{}
 	stopOnce    sync.Once
@@ -60,6 +62,8 @@ type Deps struct {
 	// Hub passes database change notifications to open pages. Without it,
 	// the live update streams answer 503.
 	Hub *live.Hub
+	// Mailer sends email. It may be nil, which turns email off.
+	Mailer *email.Client
 }
 
 func NewServer(d Deps) *Server {
@@ -79,6 +83,7 @@ func NewServer(d Deps) *Server {
 		logger:      d.Logger,
 		sealer:      d.LinkSealer,
 		hub:         d.Hub,
+		mailer:      d.Mailer,
 		streamsDone: make(chan struct{}),
 	}
 }
@@ -108,6 +113,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/api/healthz", healthz)
 	r.Get("/api/events/{slug}/memories", s.getMemories)
 	r.Get("/api/events/{slug}/stream", s.streamPublicChanges)
+	r.With(limitByIP(newKeyedLimiter(2*time.Second, 20))).Post("/api/unsubscribe/{token}", s.unsubscribe)
 
 	r.Route("/api/invitations/{token}", func(r chi.Router) {
 		r.Use(guestIPLimit, guestTokenLimit)
@@ -122,12 +128,15 @@ func (s *Server) Routes() http.Handler {
 		r.With(authLimit).Post("/api/auth/signup", s.signup)
 		r.With(authLimit).Post("/api/auth/login", s.login)
 		r.Post("/api/auth/logout", s.logout)
+		r.With(authLimit).Post("/api/auth/confirm-email", s.confirmEmail)
 
 		r.Route("/api/organizer", func(r chi.Router) {
 			r.Use(s.requireOrganizer)
 			r.Get("/me", s.me)
 			r.With(authLimit).Patch("/me", s.updateProfile)
 			r.With(authLimit).Post("/me/password", s.changePassword)
+			r.With(authLimit).Post("/me/send-confirmation", s.resendConfirmation)
+			r.Post("/me/notifications", s.setNotifications)
 			r.Get("/events", s.listMyEvents)
 			r.Post("/events", s.createEvent)
 			r.Get("/events/{eventID}", s.getMyEvent)
