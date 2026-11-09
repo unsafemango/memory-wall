@@ -62,7 +62,6 @@ export default function DashboardPage() {
   const router = useRouter();
   const [organizer, setOrganizer] = useState<Organizer | null>(null);
   const [events, setEvents] = useState<OrganizerEvent[] | null>(null);
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const toast = useToast();
 
@@ -104,20 +103,14 @@ export default function DashboardPage() {
                   {firstEvent ? "Let's set up your first memory wall." : "Here are your memory walls."}
                 </p>
               </div>
-              {!firstEvent && !creating && (
-                <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-                  New event
-                </button>
-              )}
             </div>
 
-            {(creating || firstEvent) && (
+            {firstEvent && (
               <section className="panel" style={{ marginTop: 24 }}>
                 <h2 className="section-title">New event</h2>
                 <p className="section-sub">You can change any of this later.</p>
                 <EventForm
                   onSaved={(_, id) => (id ? router.push(`/dashboard/events/${id}`) : loadEvents())}
-                  onCancel={firstEvent ? undefined : () => setCreating(false)}
                 />
               </section>
             )}
