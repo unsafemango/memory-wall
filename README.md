@@ -1,135 +1,112 @@
 # Memory Wall
 
-A private memory wall for any event, a birthday, a wedding, a graduation, a going-away party. People get an invite link, leave a note, photo, or video, and the event's organizer gets everything collected on one page. Includes an AI-assisted writing helper for people who don't know what to say.
+Memory Wall is a private, shared page for any occasion: a birthday, a wedding, a graduation, a farewell. Guests receive an invitation link and leave a note, photo, or video. The organizer reviews each submission and publishes the collection on a single page.
 
-## What it does
+## Features
 
-- **Organizers** sign up and create an event with its own page (`/sarah-30th`). They invite guests with one share link for everyone (a group chat, an email, a flyer), or with personal links made one at a time or from a pasted list of names.
-- **Guests** open their link, write a note or attach a photo or video, and can ask for help writing (three drafts in a tone they pick, optionally built around a detail they type).
-- **Moderation** is on by default: submissions wait in the organizer's dashboard until they're approved, rejected, or deleted.
-- **The event page** shows every approved memory as note cards and polaroids, followed by the organizer's closing message.
+- **Events:** organizers create an event with its own page, date, and closing message.
+- **Invitations:** a reusable share link for large groups, plus single-use personal links created individually or in bulk from a list of names.
+- **Moderation:** submissions are held for review by default and can be approved, hidden, or deleted.
+- **Photo and video uploads:** files upload directly to object storage, and videos are processed in the background.
+- **Writing assistant:** guests can request three drafts in a chosen tone, optionally built around a personal detail.
+- **Live updates:** new submissions reach the organizer's dashboard, and approved memories reach the event page, without a reload.
 
-## Stack
+## Tech stack
 
-- **API:** Go, Chi router, Postgres (pgx, no ORM), `log/slog` JSON logs
-- **Web:** Next.js (App Router), TypeScript, Tailwind
-- **Storage:** S3-compatible (MinIO locally, Cloudflare R2 in production), presigned direct uploads
-- **Auth:** Organizer accounts (email + Argon2id-hashed password, Postgres-backed sessions) for creating events and moderating; a reusable share link per event plus single-use personal invitation links for contributors
-- **AI:** Claude (Opus 5.5) through the official Go SDK, called only from the server
-- **Background jobs:** a Postgres table and a worker goroutine; videos get a thumbnail, duration, and dimensions from ffmpeg
+| Area            | Technology                                                        |
+| --------------- | ----------------------------------------------------------------- |
+| API             | Go, Chi, pgx, `log/slog`                                          |
+| Web             | Next.js (App Router), TypeScript, Tailwind CSS                    |
+| Database        | PostgreSQL                                                        |
+| Object storage  | S3-compatible: MinIO in development, Cloudflare R2 in production  |
+| Background jobs | PostgreSQL job queue, ffmpeg                                      |
+| AI              | Claude API, through the official Go SDK                           |
+| Infrastructure  | Docker, GitHub Actions, Fly.io, Vercel, Neon                      |
 
 ## Architecture
 
 ```
-Browser ──► Next.js (web) ──► Go API ──► Postgres
-   │                            │
-   │      presigned PUT/GET     ├──► S3 bucket (MinIO / R2)
-   └──────────────────────────► │
-                                ├──► Claude API (writing helper)
-                                └──► job worker (ffmpeg) ──► S3 bucket
+Browser ──► Next.js ──► Go API ──► PostgreSQL
+   │                      │  ▲          │
+   │                      │  └─ LISTEN ─┘
+   │                      ├──► Claude API
+   │                      └──► Job worker (ffmpeg) ──► Object storage
+   │                                                       ▲
+   └────────────────── presigned PUT and GET ──────────────┘
 ```
 
-The event page is a Server Component, so it fetches memories on the server. Everything else calls the API from the browser.
+### Design decisions
 
-### Decisions worth knowing
+**Direct-to-storage uploads.** The API validates the file type and size, then issues a short-lived presigned URL for a key it generates. Files go straight from the browser to the bucket, so the API only handles small JSON requests. Before a submission is saved, the API confirms that the object exists, belongs to the event, and is within the size limit. The bucket is private, and media is served through signed URLs that expire after an hour.
 
-- **Uploads go straight to the bucket.** The API checks the file type and size, then signs a 5-minute PUT URL for a key it generates (`events/<event-id>/<uuid>.jpg`). The browser uploads to the bucket directly, so the API only handles small JSON requests. Before saving the submission, the API checks that the object exists, belongs to the invitation's event, and is within the size limit.
-- **The bucket is private.** Photos and videos come back as signed GET links that expire after an hour.
-- **The job queue is a Postgres table.** At this scale it's simpler than Kafka or Redis and keeps one database to run. Workers claim jobs with `FOR UPDATE SKIP LOCKED`, failed jobs retry with a growing delay up to three times, and jobs left running by a restart are picked up again. A video's job is queued in the same transaction that saves it.
-- **Two kinds of invite link.** Each event has a **share link** anyone can use as many times as they like. It's the easy way to invite a big group, and moderation keeps strangers off the page if it spreads. The organizer can turn it off, or reset it so the old link stops working. **Personal links** greet a guest by name, work once, and show who has posted. Organizers can make up to 200 at a time from a list of names and download them as a CSV.
-- **Tokens are stored as hashes.** Session cookies and personal invitation links are 32 random bytes. Only their SHA-256 hash goes in the database, so a leaked backup can't be used to log in or submit. Passwords use Argon2id instead, because unlike random tokens they're guessable. Share tokens are the exception: they're stored as-is so the organizer can copy the link again, which is acceptable for a link that's meant to be passed around and can be reset. Personal links are also kept encrypted (AES-256-GCM, keyed by `INVITATION_LINK_KEY`) next to their hash, so the organizer can click a name to see its link again. A leaked database alone doesn't reveal them.
-- **Personal links are single-use.** Saving a submission marks the invitation used in the same transaction, so two requests racing on one link can't both succeed. Expired, used, or turned-off links return `410 Gone` with a clear message.
-- **Ownership checks live in the SQL.** Every organizer query joins on `events.owner_id`, and someone else's event or submission returns `404`, not `403`, so IDs can't be probed.
-- **CSRF.** The session cookie is `HttpOnly` and `SameSite=Lax`, CORS only allows the web app's origin, and state-changing requests with a different `Origin` header are rejected.
-- **Rate limits** are in-memory token buckets: per IP on login and signup, and per IP and per link-and-IP on guest endpoints (so a hundred guests on one share link each get their own allowance), with a tighter limit on the paid AI endpoint. This works for a single API instance. Running several would need a shared store (Redis, or a Postgres table).
-- **Live updates come from Postgres.** Triggers announce every new, approved, hidden, or deleted memory with `NOTIFY`. The API keeps one connection that `LISTEN`s and passes changes to open pages over Server-Sent Events. The manage page sees everything as it arrives, and the public page only hears about approved memories, so pending ones stay private. Because Postgres does the announcing, this also works with more than one API instance. If the connection drops, pages refetch when it comes back. Behind a proxy, make sure it doesn't buffer `text/event-stream` responses (the API sends `X-Accel-Buffering: no` for nginx).
-- **Errors** always come back as `{"error": {"code": "...", "message": "..."}}`.
+**PostgreSQL job queue.** Background work runs from a database table rather than a separate message broker, which keeps one stateful system to operate at this scale. Workers claim jobs with `FOR UPDATE SKIP LOCKED`, and failed jobs retry with backoff. Video jobs are enqueued in the same transaction as their submission.
+
+**Live updates through `LISTEN`/`NOTIFY`.** Database triggers announce each change to a memory. The API holds one listening connection and forwards changes to open pages over Server-Sent Events. Because the database is the source of these events, this works across multiple API instances. The public stream only reports changes to approved memories, so pending submissions stay private.
+
+**Invitation security.** Session and personal invitation tokens are 32 random bytes, and only their SHA-256 hashes are used for lookup. Personal links are also stored encrypted with AES-256-GCM so organizers can retrieve them. Single use is enforced in the same transaction that saves a submission, which prevents races. Share links are stored in plain form by design, since they are meant to be distributed, and they can be disabled or rotated.
+
+**Authorization and request protection.** Passwords are hashed with Argon2id. Ownership checks are part of the SQL for every organizer query, and resources belonging to another organizer return `404`. Session cookies are `HttpOnly` and `SameSite=Lax`, and state-changing requests from other origins are rejected. Authentication and guest endpoints are rate limited per client.
 
 ## Project structure
 
 ```
 memory-wall/
-  api/
-    cmd/api/            entry point: config, wiring, HTTP server, job worker
-    internal/http/      routes, handlers, middleware (auth, CSRF, rate limits, logging)
-    internal/store/     Postgres queries, one file per table
-    internal/auth/      Argon2id passwords, random tokens
-    internal/storage/   S3 client: presigned URLs, uploads, deletes
-    internal/jobs/      job queue, worker, video processing
-    internal/ai/        Claude writing helper
-    migrations/         SQL migrations (golang-migrate)
-    scripts/seed.sql    dev seed data
-  web/
-    app/[slug]/         public event page
-    app/invite/[token]/ guest page for leaving a memory
-    app/dashboard/      organizer dashboard and moderation
-    app/login, signup/  organizer auth
-    lib/                API helpers, upload helper, shared types
-  docker-compose.yml    Postgres, MinIO, migrations, API, web
-  .github/workflows/    CI
+├── api/
+│   ├── cmd/api/            API server entry point
+│   ├── cmd/migrate/        Database migration command
+│   ├── internal/ai/        Writing assistant
+│   ├── internal/auth/      Passwords, tokens, encryption
+│   ├── internal/http/      Routes, handlers, middleware
+│   ├── internal/jobs/      Job queue, worker, video processing
+│   ├── internal/live/      Change notifications
+│   ├── internal/storage/   Object storage client
+│   ├── internal/store/     Database queries
+│   ├── migrations/         SQL migrations
+│   └── scripts/seed.sql    Development seed data
+├── web/
+│   ├── app/                Pages (event, invitation, dashboard, auth)
+│   └── lib/                API client, hooks, shared types
+├── deploy/                 Storage CORS policy
+└── docker-compose.yml      Local development stack
 ```
 
-## Running locally
+## Getting started
 
-Requires Docker.
+### Prerequisites
 
-1. Create the env files from the examples:
+- Docker
+- Go 1.26 and Node.js 22, to run the API or web app outside Docker
 
-   ```bash
-   cp api/.env.example api/.env
-   cp web/.env.example web/.env
-   ```
+### Run locally
 
-   To try the writing helper, put an Anthropic API key in `ANTHROPIC_API_KEY` in `api/.env`. Without one, everything else works and the helper says it isn't set up.
+```bash
+cp api/.env.example api/.env
+cp web/.env.example web/.env
+docker compose up -d --build
+```
 
-2. Start everything:
+Compose starts PostgreSQL and MinIO, applies migrations, then starts the API and web app.
 
-   ```bash
-   docker compose up -d --build
-   ```
+| Service        | Address                           |
+| -------------- | --------------------------------- |
+| Web            | http://localhost:3000             |
+| API            | http://localhost:8080/api/healthz |
+| MinIO (S3 API) | http://localhost:9000             |
+| PostgreSQL     | localhost:5432                    |
 
-   Compose starts Postgres, runs any new migrations, then starts the API and the web app.
-
-3. Open http://localhost:3000, sign up, and create an event. On the event's Manage page, use **Invite someone** to make a link, then open it in a private window to leave a memory as a guest.
-
-   | Service        | URL                                             |
-   | -------------- | ----------------------------------------------- |
-   | Web            | http://localhost:3000                           |
-   | API health     | http://localhost:8080/api/healthz               |
-   | MinIO (S3 API) | http://localhost:9000 (minioadmin / minioadmin) |
-   | Postgres       | localhost:5432 (memorywall / devpassword)       |
-
-### Seed data
-
-`api/scripts/seed.sql` adds an event at `/sarah` (moderation off) and one invitation at http://localhost:3000/invite/dev-token-plaintext:
+Development credentials are defined in `docker-compose.yml`. To load sample data:
 
 ```bash
 docker exec -i postgres psql -U memorywall -d memorywall < api/scripts/seed.sql
 ```
 
-Personal invitations are single-use, so delete the invitation row and run it again for a fresh one. Every event also has a reusable share link, shown on its Manage page.
-
-### Running the API outside Docker
-
-Postgres and MinIO can stay in Docker:
-
-```bash
-docker compose up -d postgres minio migrate
-```
-
-Then, in `api/`, set `DATABASE_URL` and `S3_ENDPOINT` to use `localhost` instead of the `postgres` and `minio` hostnames, and run `go run ./cmd/api`. Those hostnames only resolve inside the Docker network. The video job needs `ffmpeg` installed (`brew install ffmpeg`).
-
 ### Migrations
 
-Compose applies migrations automatically. To run them by hand, from `api/`:
+Migrations are embedded in the `migrate` command. Compose applies them automatically, and they can also be run by hand from `api/`:
 
 ```bash
 DATABASE_URL="postgres://memorywall:devpassword@localhost:5432/memorywall?sslmode=disable" go run ./cmd/migrate up
 ```
-
-The migration files are embedded in that command, and the same command runs on each deploy. `go run ./cmd/migrate version` shows where the database is.
-
-New schema changes always go in a new numbered migration. Don't edit one that has already run.
 
 ### Tests
 
@@ -139,124 +116,32 @@ From `api/`:
 DATABASE_URL="postgres://memorywall:devpassword@localhost:5432/memorywall?sslmode=disable" go test ./...
 ```
 
-Database tests skip when `DATABASE_URL` isn't set. CI runs everything against a Postgres service, plus lint, a type check, and a build for the web app.
+Tests that need a database are skipped when `DATABASE_URL` is not set.
 
 ## Configuration
 
-API (`api/.env`):
+### API
 
-| Variable              | What it's for                                                       |
-| --------------------- | ------------------------------------------------------------------- |
-| `DATABASE_URL`        | Postgres connection string                                          |
-| `SITE_URL`            | Web app origin. CORS, CSRF checks, and invitation links use it      |
-| `S3_ENDPOINT`         | How the API reaches the bucket                                      |
-| `S3_PUBLIC_ENDPOINT`  | How browsers reach the bucket. Presigned URLs are signed for it     |
-| `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Bucket settings and credentials |
-| `ANTHROPIC_API_KEY`   | Turns on the writing helper                                         |
-| `INVITATION_LINK_KEY` | 64 hex characters (`openssl rand -hex 32`). Encrypts personal invite links so organizers can copy them again. Keep it secret and don't change it, or older links can't be shown |
-| `TRUST_PROXY_HEADERS` | `true` behind a proxy you control, so rate limits use the real client IP (set in `fly.toml`) |
+| Variable                                                   | Description                                                                 |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `DATABASE_URL`                                             | PostgreSQL connection string. Must be a direct connection, since live updates use `LISTEN` |
+| `SITE_URL`                                                 | Web app origin, used for CORS, origin checks, and invitation links          |
+| `S3_ENDPOINT`                                              | Object storage endpoint used by the API                                     |
+| `S3_PUBLIC_ENDPOINT`                                       | Object storage endpoint used by browsers                                    |
+| `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Bucket settings and credentials                                             |
+| `INVITATION_LINK_KEY`                                      | 64 hex characters that encrypt personal invitation links. Must stay the same once in use |
+| `ANTHROPIC_API_KEY`                                        | Enables the writing assistant (optional)                                    |
+| `TRUST_PROXY_HEADERS`                                      | Set to `true` behind a trusted proxy, so rate limits use the client IP      |
 
-Web (`web/.env`):
+### Web
 
-| Variable              | What it's for                                                          |
-| --------------------- | ---------------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL` | API address for browser requests. Inlined at build time. Leave unset to use this site's own `/api` path |
-| `API_URL`             | API address for server-side requests (`http://api:8080` in Docker). Also where `/api/*` is forwarded; read at build time for that |
+| Variable              | Description                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `API_URL`             | API address for server-side requests. Also the target of the `/api/*` forwarding         |
+| `NEXT_PUBLIC_API_URL` | API address for browser requests. When unset, the browser uses the site's own `/api` path |
 
-## Deploying
+## Deployment
 
-The setup is the web app on **Vercel**, the API on **Fly.io**, Postgres on **Neon**, and files on **Cloudflare R2**, under one domain you own:
+In production, the web app runs on Vercel, the API on Fly.io, the database on Neon, and object storage on Cloudflare R2. The API configuration is in [`api/fly.toml`](api/fly.toml), and the storage CORS policy is in [`deploy/r2-cors.json`](deploy/r2-cors.json).
 
-- `app.yourdomain.com`: the web app (Vercel)
-- `api.yourdomain.com`: the API (Fly.io)
-
-Using two subdomains of the same domain matters. Browsers count them as the same site, so the login cookie works. Separate default domains (`*.vercel.app` and `*.fly.dev`) would break logins. Replace `yourdomain.com` below with your domain.
-
-### 1. Database: Neon
-
-1. Create a project in a region close to where the API will run.
-2. Copy the **direct** connection string, the one whose host doesn't contain `-pooler`. Live updates use Postgres `LISTEN`, which doesn't work through Neon's connection pooler. Make sure it ends with `?sslmode=require`.
-
-There's no need to run migrations yourself. The API's deploy does it.
-
-### 2. Files: Cloudflare R2
-
-1. Create a bucket named `memory-wall`.
-2. In the bucket's **Settings → CORS policy**, paste [`deploy/r2-cors.json`](deploy/r2-cors.json) with your web app's address in `AllowedOrigins`.
-3. Under **R2 → Manage API tokens**, create a token with **Object Read & Write** on that bucket. Note the access key ID, the secret access key, and the S3 endpoint, `https://<account-id>.r2.cloudflarestorage.com`.
-
-### 3. API: Fly.io
-
-Install [flyctl](https://fly.io/docs/flyctl/install/), run `fly auth login`, then from `api/`:
-
-```bash
-fly apps create memory-wall-api
-```
-
-If that name is taken, pick another and change `app` in [`api/fly.toml`](api/fly.toml) to match. Then set the secrets, filling in your values:
-
-```bash
-fly secrets set \
-  DATABASE_URL="postgres://...neon.tech/neondb?sslmode=require" \
-  SITE_URL="https://app.yourdomain.com" \
-  S3_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com" \
-  S3_PUBLIC_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com" \
-  S3_ACCESS_KEY="..." \
-  S3_SECRET_KEY="..." \
-  S3_BUCKET="memory-wall" \
-  INVITATION_LINK_KEY="$(openssl rand -hex 32)" \
-  ANTHROPIC_API_KEY="..."
-```
-
-`INVITATION_LINK_KEY` must never change after people start using the app, or older personal links can no longer be shown. If you'll ever need to set up the API again, generate the key yourself first and keep a copy in a password manager.
-
-Deploy, then give it your subdomain:
-
-```bash
-fly deploy
-fly certs add api.yourdomain.com
-```
-
-`fly certs add` prints the DNS records to add at your domain's DNS provider. Each deploy runs `/bin/migrate up` before starting the new version (`release_command` in `fly.toml`). If a migration fails, the old version keeps running. Check it's up with `curl https://api.yourdomain.com/api/healthz`.
-
-### 4. Web app: Vercel
-
-1. Import the GitHub repo and set **Root Directory** to `web`. Vercel detects Next.js.
-2. Add one environment variable, `NEXT_PUBLIC_API_URL` = `https://api.yourdomain.com`, then deploy.
-3. In **Settings → Domains**, add `app.yourdomain.com` and create the DNS record Vercel shows.
-
-From then on, Vercel redeploys the web app on every push to `main`.
-
-### 5. Automatic API deploys
-
-The CI workflow deploys the API to Fly after the tests pass on `main`. To turn it on, create a token with `fly tokens create deploy -a memory-wall-api` and add it to the GitHub repo as an Actions secret named `FLY_API_TOKEN` (**Settings → Secrets and variables → Actions**). Until then, that CI step just skips.
-
-### 6. Check it works
-
-Sign up at `https://app.yourdomain.com`, create an event, and open its share link in a private window. Then:
-
-1. Leave a note and a photo as a guest.
-2. Back on the manage page, check the memory shows up without a reload.
-3. Approve it, and check it appears on the event page, also without a reload.
-4. Upload a short video and check that its thumbnail appears a few seconds later.
-
-### Without a custom domain
-
-You can run on the free `*.vercel.app` and `*.fly.dev` addresses instead. Browsers won't send the login cookie between those two sites, so the web app forwards `/api/*` to the API and the browser only talks to Vercel. The differences from the steps above:
-
-- **Fly:** set `SITE_URL` to your Vercel production address, such as `https://your-project.vercel.app`, and skip `fly certs add`. It has to be the production address: logins are rejected from Vercel's per-deploy preview URLs.
-- **Vercel:** set `API_URL` to `https://memory-wall-api.fly.dev`, and don't set `NEXT_PUBLIC_API_URL`. Skip the domain step. Redeploy if you change `API_URL`, since it's read at build time.
-- **R2 CORS:** use your Vercel address in `AllowedOrigins`.
-
-Live updates go through Vercel's forwarding in this setup, which may close long-open connections. Pages reconnect and catch up by themselves.
-
-### Good to know
-
-- Fly may start two machines on the first deploy. That's fine: the job worker and live updates work across machines. Rate limits are counted per machine, so `fly scale count 1` keeps them exact.
-- Back up the database with Neon's point-in-time restore, and check its retention on your plan.
-- Logs: `fly logs` for the API, and the Vercel dashboard for the web app.
-
-## Notes
-
-- **MinIO image:** MinIO no longer publishes official Docker images, so this uses `bitnamilegacy/minio` for local development. It creates the `memory-wall` bucket on startup. This build has no web console, so use the `mc` CLI or any S3 client to look at buckets.
-- **Changed Postgres credentials?** Postgres only reads them when the volume is first created. Reset with `docker compose down -v`.
+GitHub Actions runs the tests, lint, type checks, and builds on every push. After a successful run on `main`, the API deploys to Fly.io, where migrations run as a release step before the new version starts. Vercel deploys the web app from `main`.

@@ -1,9 +1,8 @@
 # Fly.io config for the Go API. Deploy from this folder with `fly deploy`.
 # Secrets (DATABASE_URL, S3 keys, INVITATION_LINK_KEY, ANTHROPIC_API_KEY)
-# are set with `fly secrets set`, never in this file. See the README.
+# are set with `fly secrets set`, never in this file.
 
-# App names are global on Fly. If this one is taken, pick another and use it
-# everywhere the README mentions memory-wall-api.
+# App names are global on Fly.
 app = "memory-wall-api"
 # Toronto. Put it near your Neon database's region: `fly platform regions`.
 primary_region = "yyz"
