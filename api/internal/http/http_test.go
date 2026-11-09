@@ -447,3 +447,78 @@ func TestAccountSettings(t *testing.T) {
 		t.Fatal("the new password should work")
 	}
 }
+
+func TestEventMoment(t *testing.T) {
+	at, err := eventMoment("2026-12-14", "18:30", "America/Toronto")
+	if err != nil {
+		t.Fatalf("eventMoment: %v", err)
+	}
+	if got := at.UTC().Format(time.RFC3339); got != "2026-12-14T23:30:00Z" {
+		t.Fatalf("6:30pm in Toronto = %s, want 23:30 UTC", got)
+	}
+	midnight, _ := eventMoment("2026-12-14", "", "America/Toronto")
+	if got := midnight.UTC().Format(time.RFC3339); got != "2026-12-14T05:00:00Z" {
+		t.Fatalf("with no time it should be the start of the day there, got %s", got)
+	}
+	if none, err := eventMoment("", "18:30", "UTC"); none != nil || err != nil {
+		t.Fatalf("no date should give no moment: %v, %v", none, err)
+	}
+	for _, bad := range [][2]string{{"18:30", "Not/AZone"}, {"6pm", "UTC"}} {
+		if _, err := eventMoment("2026-12-14", bad[0], bad[1]); err == nil {
+			t.Errorf("%v should be rejected", bad)
+		}
+	}
+}
+
+// TestHiddenEventKeepsMemoriesPrivate checks memories aren't sent before the
+// reveal, even approved ones, and are afterwards. Needs DATABASE_URL.
+func TestHiddenEventKeepsMemoriesPrivate(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping database test")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	_, suffix, _ := auth.NewToken()
+	ownerID, err := store.NewOrganizerStore(db).Create(ctx, "hide-"+suffix[:8]+"@test.example", "hash", "Owner")
+	if err != nil {
+		t.Fatalf("create organizer: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM organizers WHERE id = $1`, ownerID) })
+
+	future := time.Now().Add(time.Hour)
+	slug := "hide-" + suffix[:8]
+	events := store.NewEventStore(db)
+	event := store.Event{OwnerID: ownerID, Title: "Surprise", Slug: slug, EventDate: "2030-01-01", EventAt: &future, Timezone: "UTC", HideUntilEvent: true}
+	if event.ID, err = events.Create(ctx, event); err != nil {
+		t.Fatalf("create event: %v", err)
+	}
+	const secret = "the surprise message"
+	if _, err := store.NewSubmissionStore(db).Create(ctx, store.Submission{EventID: event.ID, SenderName: "Ana", Type: "note", Message: secret, Status: "approved"}, nil); err != nil {
+		t.Fatalf("create submission: %v", err)
+	}
+
+	router := NewServer(Deps{Events: events, Submissions: store.NewSubmissionStore(db), SiteURL: "http://localhost:3000"}).Routes()
+	get := func() string {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/events/"+slug+"/memories", nil))
+		return w.Body.String()
+	}
+	if body := get(); strings.Contains(body, secret) || !strings.Contains(body, `"locked":true`) {
+		t.Fatalf("before the event, memories must not be sent: %s", body)
+	}
+
+	past := time.Now().Add(-time.Minute)
+	event.EventAt = &past
+	if err := events.Update(ctx, event); err != nil {
+		t.Fatalf("update event: %v", err)
+	}
+	if body := get(); !strings.Contains(body, secret) {
+		t.Fatalf("after the event, memories should be sent: %s", body)
+	}
+}

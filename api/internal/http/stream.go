@@ -27,7 +27,8 @@ func (s *Server) streamPublicChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.streamChanges(w, r, event.ID, func(c live.Change) any {
-		if !c.Public() {
+		// While hidden, even "something changed" would give the surprise away.
+		if !c.Public() || event.Hidden(time.Now()) {
 			return nil
 		}
 		return map[string]string{"op": c.Op}

@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// Timezone data, since the API image doesn't ship the system's.
+	_ "time/tzdata"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/ai"

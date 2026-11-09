@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,10 +19,21 @@ type Event struct {
 	ModerationEnabled bool   `json:"moderation_enabled"`
 	Occasion          string `json:"occasion"`
 	HonoreeName       string `json:"honoree_name,omitempty"`
+	EventTime         string `json:"event_time,omitempty"` // "18:30", empty when not set
+	Timezone          string `json:"timezone"`             // IANA name, like America/Toronto
+	// EventAt is the exact moment of the event, worked out from the date, time,
+	// and timezone. Nil when the event has no date.
+	EventAt        *time.Time `json:"event_at,omitempty"`
+	HideUntilEvent bool       `json:"hide_until_event"`
 	// ShareToken is the event's reusable link. It's never sent as-is; the
 	// organizer endpoints turn it into ShareURL.
 	ShareToken   string `json:"-"`
 	ShareEnabled bool   `json:"-"`
+}
+
+// Hidden reports whether the event's memories are still under wraps.
+func (e Event) Hidden(now time.Time) bool {
+	return e.HideUntilEvent && e.EventAt != nil && now.Before(*e.EventAt)
 }
 
 type EventStore struct {
@@ -33,12 +45,14 @@ func NewEventStore(db *pgxpool.Pool) *EventStore {
 }
 
 const eventColumns = `id, COALESCE(owner_id::text, ''), title, slug, COALESCE(event_date::text, ''),
-	COALESCE(closing_message, ''), moderation_enabled, occasion, COALESCE(honoree_name, ''), share_token, share_enabled`
+	COALESCE(closing_message, ''), moderation_enabled, occasion, COALESCE(honoree_name, ''),
+	COALESCE(event_time, ''), timezone, event_at, hide_until_event, share_token, share_enabled`
 
 func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	var e Event
 	err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage, &e.ModerationEnabled,
-		&e.Occasion, &e.HonoreeName, &e.ShareToken, &e.ShareEnabled)
+		&e.Occasion, &e.HonoreeName, &e.EventTime, &e.Timezone, &e.EventAt, &e.HideUntilEvent,
+		&e.ShareToken, &e.ShareEnabled)
 	return e, err
 }
 
@@ -53,10 +67,13 @@ func (s *EventStore) GetByID(ctx context.Context, id string) (Event, error) {
 func (s *EventStore) Create(ctx context.Context, e Event) (string, error) {
 	var id string
 	err := s.db.QueryRow(ctx,
-		`INSERT INTO events (owner_id, title, slug, event_date, closing_message, moderation_enabled, occasion, honoree_name)
-		 VALUES ($1, $2, $3, NULLIF($4, '')::date, NULLIF($5, ''), $6, COALESCE(NULLIF($7, ''), 'other'), NULLIF($8, ''))
+		`INSERT INTO events (owner_id, title, slug, event_date, closing_message, moderation_enabled, occasion, honoree_name,
+		                     event_time, timezone, event_at, hide_until_event)
+		 VALUES ($1, $2, $3, NULLIF($4, '')::date, NULLIF($5, ''), $6, COALESCE(NULLIF($7, ''), 'other'), NULLIF($8, ''),
+		         NULLIF($9, ''), COALESCE(NULLIF($10, ''), 'UTC'), $11, $12)
 		 RETURNING id`,
 		e.OwnerID, e.Title, e.Slug, e.EventDate, e.ClosingMessage, e.ModerationEnabled, e.Occasion, e.HonoreeName,
+		e.EventTime, e.Timezone, e.EventAt, e.HideUntilEvent,
 	).Scan(&id)
 	return id, mapDuplicate(err)
 }
@@ -75,6 +92,7 @@ func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSu
 	rows, err := s.db.Query(ctx,
 		`SELECT e.id, COALESCE(e.owner_id::text, ''), e.title, e.slug, COALESCE(e.event_date::text, ''),
 		        COALESCE(e.closing_message, ''), e.moderation_enabled, e.occasion, COALESCE(e.honoree_name, ''),
+		        COALESCE(e.event_time, ''), e.timezone, e.event_at, e.hide_until_event,
 		        e.share_token, e.share_enabled,
 		        COUNT(s.id) FILTER (WHERE s.status = 'pending'),
 		        COUNT(s.id) FILTER (WHERE s.status = 'approved')
@@ -91,7 +109,8 @@ func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSu
 	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EventSummary, error) {
 		var e EventSummary
 		err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage,
-			&e.ModerationEnabled, &e.Occasion, &e.HonoreeName, &e.ShareToken, &e.ShareEnabled,
+			&e.ModerationEnabled, &e.Occasion, &e.HonoreeName, &e.EventTime, &e.Timezone, &e.EventAt, &e.HideUntilEvent,
+			&e.ShareToken, &e.ShareEnabled,
 			&e.PendingCount, &e.ApprovedCount)
 		return e, err
 	})
@@ -119,9 +138,12 @@ func (s *EventStore) Update(ctx context.Context, e Event) error {
 	tag, err := s.db.Exec(ctx,
 		`UPDATE events SET title = $3, slug = $4, event_date = NULLIF($5, '')::date,
 		        closing_message = NULLIF($6, ''), moderation_enabled = $7,
-		        occasion = COALESCE(NULLIF($8, ''), 'other'), honoree_name = NULLIF($9, '')
+		        occasion = COALESCE(NULLIF($8, ''), 'other'), honoree_name = NULLIF($9, ''),
+		        event_time = NULLIF($10, ''), timezone = COALESCE(NULLIF($11, ''), 'UTC'), event_at = $12,
+		        hide_until_event = $13
 		 WHERE id = $1 AND owner_id = $2`,
 		e.ID, e.OwnerID, e.Title, e.Slug, e.EventDate, e.ClosingMessage, e.ModerationEnabled, e.Occasion, e.HonoreeName,
+		e.EventTime, e.Timezone, e.EventAt, e.HideUntilEvent,
 	)
 	if err != nil {
 		return mapDuplicate(err)

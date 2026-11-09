@@ -19,6 +19,7 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 // catch-all route.
 var reservedSlugs = map[string]bool{
 	"api": true, "login": true, "signup": true, "dashboard": true, "invite": true,
+	"confirm-email": true, "unsubscribe": true,
 }
 
 type eventInput struct {
@@ -29,6 +30,32 @@ type eventInput struct {
 	ModerationEnabled bool   `json:"moderation_enabled"`
 	Occasion          string `json:"occasion"`     // one of ai.Occasions, optional
 	HonoreeName       string `json:"honoree_name"` // who the event is for, optional
+	EventTime         string `json:"event_time"`   // "18:30", optional
+	Timezone          string `json:"timezone"`     // IANA name, from the organizer's browser
+	HideUntilEvent    bool   `json:"hide_until_event"`
+
+	// eventAt is worked out from the date, time, and timezone.
+	eventAt *time.Time
+}
+
+// eventMoment works out the exact moment of an event. With no time, it's the
+// start of that day in the event's timezone.
+func eventMoment(date, clock, timezone string) (*time.Time, error) {
+	if date == "" {
+		return nil, nil
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, err
+	}
+	if clock == "" {
+		clock = "00:00"
+	}
+	at, err := time.ParseInLocation("2006-01-02 15:04", date+" "+clock, loc)
+	if err != nil {
+		return nil, err
+	}
+	return &at, nil
 }
 
 // decodeEvent reads and validates an event from the request body. On failure
@@ -73,6 +100,27 @@ func decodeEvent(w http.ResponseWriter, r *http.Request) (eventInput, bool) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "the name of who it's for is too long")
 		return input, false
 	}
+
+	if input.Timezone == "" {
+		input.Timezone = "UTC"
+	}
+	at, err := eventMoment(input.EventDate, input.EventTime, input.Timezone)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "the time must look like 18:30")
+		return input, false
+	}
+	input.eventAt = at
+	if input.EventDate == "" {
+		input.EventTime = ""
+	}
+	// A memorial has nothing to count down to, so it never hides its memories.
+	if input.Occasion == "memorial" {
+		input.HideUntilEvent = false
+	}
+	if input.HideUntilEvent && input.EventDate == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "add a date to keep memories hidden until the event")
+		return input, false
+	}
 	return input, true
 }
 
@@ -92,6 +140,10 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 		ModerationEnabled: input.ModerationEnabled,
 		Occasion:          input.Occasion,
 		HonoreeName:       input.HonoreeName,
+		EventTime:         input.EventTime,
+		Timezone:          input.Timezone,
+		EventAt:           input.eventAt,
+		HideUntilEvent:    input.HideUntilEvent,
 	})
 	if errors.Is(err, store.ErrDuplicate) {
 		writeError(w, http.StatusConflict, "slug_taken", "that link is already taken, try another")
@@ -218,6 +270,10 @@ func (s *Server) updateEvent(w http.ResponseWriter, r *http.Request) {
 		ModerationEnabled: input.ModerationEnabled,
 		Occasion:          input.Occasion,
 		HonoreeName:       input.HonoreeName,
+		EventTime:         input.EventTime,
+		Timezone:          input.Timezone,
+		EventAt:           input.eventAt,
+		HideUntilEvent:    input.HideUntilEvent,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "event not found")

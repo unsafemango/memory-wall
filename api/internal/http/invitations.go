@@ -84,6 +84,8 @@ func (s *Server) getInvitation(w http.ResponseWriter, r *http.Request) {
 			"moderation_enabled": event.ModerationEnabled,
 			"occasion":           event.Occasion,
 			"honoree_name":       event.HonoreeName,
+			"event_at":           event.EventAt,
+			"hide_until_event":   event.HideUntilEvent,
 		},
 	})
 }
