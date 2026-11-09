@@ -160,8 +160,8 @@ Web (`web/.env`):
 
 | Variable              | What it's for                                                          |
 | --------------------- | ---------------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL` | API address for browser requests. Inlined at build time                |
-| `API_URL`             | API address for server-side requests (`http://api:8080` in Docker)     |
+| `NEXT_PUBLIC_API_URL` | API address for browser requests. Inlined at build time. Leave unset to use this site's own `/api` path |
+| `API_URL`             | API address for server-side requests (`http://api:8080` in Docker). Also where `/api/*` is forwarded; read at build time for that |
 
 ## Deploying
 
@@ -239,6 +239,16 @@ Sign up at `https://app.yourdomain.com`, create an event, and open its share lin
 2. Back on the manage page, check the memory shows up without a reload.
 3. Approve it, and check it appears on the event page, also without a reload.
 4. Upload a short video and check that its thumbnail appears a few seconds later.
+
+### Without a custom domain
+
+You can run on the free `*.vercel.app` and `*.fly.dev` addresses instead. Browsers won't send the login cookie between those two sites, so the web app forwards `/api/*` to the API and the browser only talks to Vercel. The differences from the steps above:
+
+- **Fly:** set `SITE_URL` to your Vercel production address, such as `https://your-project.vercel.app`, and skip `fly certs add`. It has to be the production address: logins are rejected from Vercel's per-deploy preview URLs.
+- **Vercel:** set `API_URL` to `https://memory-wall-api.fly.dev`, and don't set `NEXT_PUBLIC_API_URL`. Skip the domain step. Redeploy if you change `API_URL`, since it's read at build time.
+- **R2 CORS:** use your Vercel address in `AllowedOrigins`.
+
+Live updates go through Vercel's forwarding in this setup, which may close long-open connections. Pages reconnect and catch up by themselves.
 
 ### Good to know
 

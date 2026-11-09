@@ -1,6 +1,4 @@
-import { errorMessage } from "./api";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL, errorMessage } from "./api";
 
 export const ACCEPTED_FILE_TYPES = "image/jpeg,image/png,image/webp,image/heic,video/mp4,video/quicktime";
 

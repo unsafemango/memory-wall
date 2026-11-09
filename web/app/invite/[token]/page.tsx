@@ -2,11 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { apiError, errorMessage } from "@/lib/api";
+import { API_URL, apiError, errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const MAX_MESSAGE = 5000;
 
 type Invitation = {

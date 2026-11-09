@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+// Where the browser reaches the API. Leave NEXT_PUBLIC_API_URL unset to use
+// this site's own /api path, which next.config.ts forwards to the API.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 // api calls the Go API from the browser, always sending the session cookie.
 export function api(path: string, init: RequestInit = {}) {

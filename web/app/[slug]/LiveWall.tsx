@@ -1,10 +1,9 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
+import { API_URL } from "@/lib/api";
 import type { Memory } from "@/lib/types";
 import { useLiveChanges } from "@/lib/useLiveChanges";
 import { MemoryCard } from "./MemoryCard";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // LiveWall shows the event's memories and keeps them current: when the
 // organizer approves, hides, or deletes one, the page updates by itself.
