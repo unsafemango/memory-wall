@@ -127,3 +127,97 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(organizer)
 }
+
+// updateProfile changes the logged-in organizer's name and email. Changing
+// the email needs their current password, since it's what they log in with.
+func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email           string `json:"email"`
+		DisplayName     string `json:"display_name"`
+		CurrentPassword string `json:"current_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	displayName := strings.TrimSpace(input.DisplayName)
+	if _, err := mail.ParseAddress(email); err != nil || displayName == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "a name and a valid email are required")
+		return
+	}
+	if len(displayName) > 100 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "the name is too long")
+		return
+	}
+
+	organizer, err := s.organizers.GetByID(r.Context(), organizerIDFrom(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load your account")
+		return
+	}
+	if email != organizer.Email && !auth.VerifyPassword(input.CurrentPassword, organizer.PasswordHash) {
+		writeError(w, http.StatusForbidden, "wrong_password", "your current password is incorrect")
+		return
+	}
+
+	err = s.organizers.UpdateProfile(r.Context(), organizer.ID, email, displayName)
+	if errors.Is(err, store.ErrDuplicate) {
+		writeError(w, http.StatusConflict, "email_taken", "an account with that email already exists")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not update your account")
+		return
+	}
+	s.me(w, r)
+}
+
+// changePassword replaces the logged-in organizer's password and signs them
+// out on every other device.
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		return
+	}
+	if len(input.NewPassword) < 10 || len(input.NewPassword) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "the new password must be at least 10 characters")
+		return
+	}
+
+	organizer, err := s.organizers.GetByID(r.Context(), organizerIDFrom(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not load your account")
+		return
+	}
+	if !auth.VerifyPassword(input.CurrentPassword, organizer.PasswordHash) {
+		writeError(w, http.StatusForbidden, "wrong_password", "your current password is incorrect")
+		return
+	}
+
+	hash, err := auth.HashPassword(input.NewPassword)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not change your password")
+		return
+	}
+	if err := s.organizers.UpdatePassword(r.Context(), organizer.ID, hash); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not change your password")
+		return
+	}
+
+	// requireOrganizer already checked this cookie, so it's present.
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+		return
+	}
+	if err := s.sessions.DeleteOthers(r.Context(), organizer.ID, auth.HashToken(cookie.Value)); err != nil {
+		s.logger.Error("end other sessions", "organizer_id", organizer.ID, "error", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

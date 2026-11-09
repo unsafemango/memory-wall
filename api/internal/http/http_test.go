@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -353,4 +354,96 @@ func (s *Server) withEventID(h http.HandlerFunc, eventID string) http.Handler {
 		rctx.URLParams.Add("eventID", eventID)
 		h(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
 	})
+}
+
+// TestAccountSettings covers changing a name, email, and password through the
+// router, and that a password change signs out other devices. Needs DATABASE_URL.
+func TestAccountSettings(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping database test")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	_, suffix, _ := auth.NewToken()
+	email := "account-" + suffix[:8] + "@test.example"
+	other := "taken-" + suffix[:8] + "@test.example"
+	organizers := store.NewOrganizerStore(db)
+	if _, err := organizers.Create(ctx, other, "hash", "Other"); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Exec(context.Background(), `DELETE FROM organizers WHERE email LIKE $1`, "%"+suffix[:8]+"@test.example")
+	})
+
+	router := NewServer(Deps{Organizers: organizers, Sessions: store.NewSessionStore(db), SiteURL: "http://localhost:3000"}).Routes()
+	ip := 0
+	call := func(method, path, body, cookie string) *httptest.ResponseRecorder {
+		ip++ // a new address each call, so rate limits stay out of the way
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "192.0.2." + strconv.Itoa(100+ip) + ":1"
+		if cookie != "" {
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+	login := func(mail, password string) string {
+		w := call(http.MethodPost, "/api/auth/login", `{"email":"`+mail+`","password":"`+password+`"}`, "")
+		for _, c := range w.Result().Cookies() {
+			if c.Name == sessionCookie {
+				return c.Value
+			}
+		}
+		return ""
+	}
+
+	w := call(http.MethodPost, "/api/auth/signup", `{"email":"`+email+`","password":"first password","display_name":"First"}`, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("signup: %d %s", w.Code, w.Body.String())
+	}
+	laptop, phone := login(email, "first password"), login(email, "first password")
+	if laptop == "" || phone == "" {
+		t.Fatal("login should give session cookies")
+	}
+
+	const me = "/api/organizer/me"
+	tests := []struct {
+		name, method, path, body string
+		want                     int
+	}{
+		{"rename without a password", http.MethodPatch, me, `{"email":"` + email + `","display_name":"Renamed"}`, 200},
+		{"blank name", http.MethodPatch, me, `{"email":"` + email + `","display_name":" "}`, 400},
+		{"new email without the password", http.MethodPatch, me, `{"email":"new-` + suffix[:8] + `@test.example","display_name":"Renamed"}`, 403},
+		{"email already taken", http.MethodPatch, me, `{"email":"` + other + `","display_name":"Renamed","current_password":"first password"}`, 409},
+		{"wrong current password", http.MethodPost, me + "/password", `{"current_password":"nope","new_password":"second password"}`, 403},
+		{"new password too short", http.MethodPost, me + "/password", `{"current_password":"first password","new_password":"short"}`, 400},
+		{"change password", http.MethodPost, me + "/password", `{"current_password":"first password","new_password":"second password"}`, 204},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if w := call(tt.method, tt.path, tt.body, laptop); w.Code != tt.want {
+				t.Fatalf("got %d, want %d: %s", w.Code, tt.want, w.Body.String())
+			}
+		})
+	}
+
+	if w := call(http.MethodGet, me, "", laptop); w.Code != 200 || !strings.Contains(w.Body.String(), "Renamed") || strings.Contains(w.Body.String(), "argon2") {
+		t.Fatalf("this device should stay signed in with the new name and no hash: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(http.MethodGet, me, "", phone); w.Code != http.StatusUnauthorized {
+		t.Fatalf("the other device should be signed out: got %d", w.Code)
+	}
+	if login(email, "first password") != "" {
+		t.Fatal("the old password should stop working")
+	}
+	if login(email, "second password") == "" {
+		t.Fatal("the new password should work")
+	}
 }

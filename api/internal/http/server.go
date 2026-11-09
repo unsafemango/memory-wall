@@ -126,6 +126,8 @@ func (s *Server) Routes() http.Handler {
 		r.Route("/api/organizer", func(r chi.Router) {
 			r.Use(s.requireOrganizer)
 			r.Get("/me", s.me)
+			r.With(authLimit).Patch("/me", s.updateProfile)
+			r.With(authLimit).Post("/me/password", s.changePassword)
 			r.Get("/events", s.listMyEvents)
 			r.Post("/events", s.createEvent)
 			r.Get("/events/{eventID}", s.getMyEvent)

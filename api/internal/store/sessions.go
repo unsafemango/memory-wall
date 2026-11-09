@@ -39,3 +39,13 @@ func (s *SessionStore) Delete(ctx context.Context, tokenHash string) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash)
 	return err
 }
+
+// DeleteOthers ends all of an organizer's sessions except one, signing them
+// out everywhere else.
+func (s *SessionStore) DeleteOthers(ctx context.Context, organizerID, keepTokenHash string) error {
+	_, err := s.db.Exec(ctx,
+		`DELETE FROM sessions WHERE organizer_id = $1 AND token_hash <> $2`,
+		organizerID, keepTokenHash,
+	)
+	return err
+}
