@@ -29,13 +29,13 @@ func NewVideoProcessor(s *storage.Storage, media *store.MediaStore) *VideoProces
 
 func (p *VideoProcessor) Handle(ctx context.Context, payload []byte) error {
 	var input struct {
-		SubmissionID string `json:"submission_id"`
+		MediaID string `json:"media_id"`
 	}
 	if err := json.Unmarshal(payload, &input); err != nil {
 		return fmt.Errorf("decode payload: %w", err)
 	}
 
-	key, err := p.media.StorageKeyFor(ctx, input.SubmissionID)
+	key, err := p.media.StorageKeyFor(ctx, input.MediaID)
 	if err != nil {
 		return fmt.Errorf("find media: %w", err)
 	}
@@ -72,7 +72,7 @@ func (p *VideoProcessor) Handle(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("upload thumbnail: %w", err)
 	}
 
-	return p.media.SetVideoInfo(ctx, input.SubmissionID, info)
+	return p.media.SetVideoInfo(ctx, input.MediaID, info)
 }
 
 func (p *VideoProcessor) download(ctx context.Context, key, path string) error {

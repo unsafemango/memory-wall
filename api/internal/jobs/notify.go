@@ -54,7 +54,7 @@ func (n *MemoryNotifier) Handle(ctx context.Context, payload []byte) error {
 
 	previews := make([]email.NewMemory, len(unseen.Previews))
 	for i, m := range unseen.Previews {
-		previews[i] = email.NewMemory{Sender: m.SenderName, Message: m.Message, Type: m.Type}
+		previews[i] = email.NewMemory{Sender: m.SenderName, Message: m.Message, Photos: m.Photos, Videos: m.Videos}
 	}
 	msg, err := email.NewMemories(
 		target.OwnerEmail, target.EventTitle, previews, unseen.Total, unseen.NeedsReview,

@@ -28,8 +28,9 @@ type NotificationTarget struct {
 // UnseenMemory is a memory the organizer hasn't been told about yet.
 type UnseenMemory struct {
 	SenderName string
-	Type       string
 	Message    string
+	Photos     int
+	Videos     int
 }
 
 // UnseenMemories is a batch of memories to tell an organizer about. Previews
@@ -80,7 +81,9 @@ func (s *SubmissionStore) NotificationTarget(ctx context.Context, eventID string
 // there's nothing new.
 func (s *SubmissionStore) ListUnseenMemories(ctx context.Context, eventID string, limit int) (UnseenMemories, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT sub.sender_name, sub.type, COALESCE(sub.message, ''),
+		`SELECT sub.sender_name, COALESCE(sub.message, ''),
+		        (SELECT count(*) FROM media m WHERE m.submission_id = sub.id AND m.mime_type LIKE 'image/%'),
+		        (SELECT count(*) FROM media m WHERE m.submission_id = sub.id AND m.mime_type LIKE 'video/%'),
 		        count(*) OVER (), bool_or(sub.status = 'pending') OVER (), max(sub.created_at) OVER ()
 		 FROM submissions sub
 		 JOIN events e ON e.id = sub.event_id
@@ -97,7 +100,7 @@ func (s *SubmissionStore) ListUnseenMemories(ctx context.Context, eventID string
 	var out UnseenMemories
 	for rows.Next() {
 		var m UnseenMemory
-		if err := rows.Scan(&m.SenderName, &m.Type, &m.Message, &out.Total, &out.NeedsReview, &out.Through); err != nil {
+		if err := rows.Scan(&m.SenderName, &m.Message, &m.Photos, &m.Videos, &out.Total, &out.NeedsReview, &out.Through); err != nil {
 			return UnseenMemories{}, err
 		}
 		out.Previews = append(out.Previews, m)

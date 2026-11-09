@@ -50,7 +50,7 @@ func TestNoKeyMeansDisabled(t *testing.T) {
 }
 
 func TestNewMemoriesWording(t *testing.T) {
-	one, err := NewMemories("o@example.com", "Sam's 30th", []NewMemory{{Sender: "Rosa", Message: "Happy birthday!", Type: "note"}}, 1, true, "https://x/m", "https://x/u")
+	one, err := NewMemories("o@example.com", "Sam's 30th", []NewMemory{{Sender: "Rosa", Message: "Happy birthday!"}}, 1, true, "https://x/m", "https://x/u")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestNewMemoriesWording(t *testing.T) {
 		t.Errorf("should say it needs review: %s", one.Text)
 	}
 
-	many := []NewMemory{{Sender: "A", Message: "one"}, {Sender: "B", Message: "two"}, {Sender: "C", Type: "photo"}, {Sender: "D", Message: "four"}}
+	many := []NewMemory{{Sender: "A", Message: "one"}, {Sender: "B", Message: "two"}, {Sender: "C", Photos: 2, Videos: 1}, {Sender: "D", Message: "four"}}
 	batch, err := NewMemories("o@example.com", "Sam's 30th", many, 5, false, "https://x/m", "https://x/u")
 	if err != nil {
 		t.Fatal(err)
@@ -72,8 +72,8 @@ func TestNewMemoriesWording(t *testing.T) {
 	if !strings.Contains(batch.Text, "And 2 more") || strings.Contains(batch.Text, "four") {
 		t.Errorf("should preview 3 and sum up the rest: %s", batch.Text)
 	}
-	if !strings.Contains(batch.Text, "Shared a photo") {
-		t.Errorf("an uncaptioned photo needs a description: %s", batch.Text)
+	if !strings.Contains(batch.Text, "Shared 2 photos and a video") {
+		t.Errorf("uncaptioned files needs a description: %s", batch.Text)
 	}
 }
 

@@ -65,7 +65,8 @@ func Confirmation(to, name, link string) (Message, error) {
 type NewMemory struct {
 	Sender  string
 	Message string
-	Type    string // note, photo, or video
+	Photos  int
+	Videos  int
 }
 
 // preview is what a memory looks like in an email. Photos and videos without
@@ -73,19 +74,31 @@ type NewMemory struct {
 func (m NewMemory) preview() string {
 	text := strings.TrimSpace(m.Message)
 	if text == "" {
-		switch m.Type {
-		case "photo":
-			return "Shared a photo"
-		case "video":
-			return "Shared a video"
+		var parts []string
+		if m.Photos > 0 {
+			parts = append(parts, countOf(m.Photos, "photo"))
 		}
-		return "Left a memory"
+		if m.Videos > 0 {
+			parts = append(parts, countOf(m.Videos, "video"))
+		}
+		if len(parts) == 0 {
+			return "Left a memory"
+		}
+		return "Shared " + strings.Join(parts, " and ")
 	}
 	runes := []rune(text)
 	if len(runes) > 200 {
 		return strings.TrimSpace(string(runes[:200])) + "…"
 	}
 	return text
+}
+
+// countOf gives "a photo" or "3 photos".
+func countOf(n int, word string) string {
+	if n == 1 {
+		return "a " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // maxPreviews is how many memories one email shows before summing up the rest.

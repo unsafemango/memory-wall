@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -26,9 +26,16 @@ type Memory struct {
 	Type       string    `json:"type"`
 	Message    string    `json:"message"`
 	CreatedAt  time.Time `json:"created_at"`
-	MimeType   string    `json:"mime_type,omitempty"`
-	// MediaURL is filled in by the handler with a temporary signed link.
-	MediaURL     string `json:"media_url,omitempty"`
+	// Files are the memory's photos and videos, in the order they were added.
+	Files []MemoryFile `json:"files"`
+}
+
+// MemoryFile is one photo or video in a memory.
+type MemoryFile struct {
+	ID       string `json:"id"`
+	MimeType string `json:"mime_type"`
+	// URL and ThumbnailURL are filled in by the handler with temporary signed links.
+	URL          string `json:"url,omitempty"`
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
 	StorageKey   string `json:"-"`
 	ThumbnailKey string `json:"-"`
@@ -42,11 +49,11 @@ func NewSubmissionStore(db *pgxpool.Pool) *SubmissionStore {
 	return &SubmissionStore{db: db}
 }
 
-// Create saves a submission, with its uploaded file when media is non-nil.
+// Create saves a submission with its uploaded files, if it has any.
 // In the same transaction it marks the invitation as used, so a link can only
 // be used once even if two requests race. Returns ErrInvitationUsed if the
 // invitation was already used or has expired.
-func (s *SubmissionStore) Create(ctx context.Context, sub Submission, media *Media) (string, error) {
+func (s *SubmissionStore) Create(ctx context.Context, sub Submission, files []Media) (string, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -77,25 +84,27 @@ func (s *SubmissionStore) Create(ctx context.Context, sub Submission, media *Med
 		return "", err
 	}
 
-	if media != nil {
-		_, err = tx.Exec(ctx,
-			`INSERT INTO media (submission_id, storage_key, mime_type, file_size) VALUES ($1, $2, $3, $4)`,
-			id, media.StorageKey, media.MimeType, media.FileSize,
-		)
+	for position, file := range files {
+		var mediaID string
+		err = tx.QueryRow(ctx,
+			`INSERT INTO media (submission_id, storage_key, mime_type, file_size, position)
+			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			id, file.StorageKey, file.MimeType, file.FileSize, position,
+		).Scan(&mediaID)
 		if err != nil {
 			return "", err
 		}
-	}
 
-	// Videos get a thumbnail and their duration from a background job. Queueing
-	// it in this transaction means a saved video always has its job.
-	if sub.Type == "video" {
-		_, err = tx.Exec(ctx,
-			`INSERT INTO jobs (type, payload) VALUES ($1, json_build_object('submission_id', $2::uuid))`,
-			JobProcessVideo, id,
-		)
-		if err != nil {
-			return "", err
+		// Videos get a thumbnail and their duration from a background job.
+		// Queueing it in this transaction means a saved video always has its job.
+		if strings.HasPrefix(strings.ToLower(file.MimeType), "video/") {
+			_, err = tx.Exec(ctx,
+				`INSERT INTO jobs (type, payload) VALUES ($1, json_build_object('media_id', $2::uuid))`,
+				JobProcessVideo, mediaID,
+			)
+			if err != nil {
+				return "", err
+			}
 		}
 	}
 
@@ -119,11 +128,9 @@ func (s *SubmissionStore) GetByID(ctx context.Context, id string) (Submission, e
 // ListApprovedBySlug returns an event's approved submissions, oldest first.
 func (s *SubmissionStore) ListApprovedBySlug(ctx context.Context, slug string) ([]Memory, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at,
-		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, ''), COALESCE(m.thumbnail_key, '')
+		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at
 		 FROM submissions s
 		 JOIN events e ON e.id = s.event_id
-		 LEFT JOIN media m ON m.submission_id = s.id
 		 WHERE e.slug = $1 AND s.status = 'approved'
 		 ORDER BY s.created_at`,
 		slug,
@@ -133,13 +140,62 @@ func (s *SubmissionStore) ListApprovedBySlug(ctx context.Context, slug string) (
 	}
 	memories, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Memory, error) {
 		var m Memory
-		err := row.Scan(&m.ID, &m.SenderName, &m.Type, &m.Message, &m.CreatedAt, &m.StorageKey, &m.MimeType, &m.ThumbnailKey)
+		err := row.Scan(&m.ID, &m.SenderName, &m.Type, &m.Message, &m.CreatedAt)
 		return m, err
 	})
+	if err != nil {
+		return nil, err
+	}
 	if memories == nil {
 		memories = []Memory{}
 	}
-	return memories, err
+
+	ids := make([]string, len(memories))
+	for i, m := range memories {
+		ids[i] = m.ID
+	}
+	files, err := s.filesFor(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range memories {
+		memories[i].Files = files[memories[i].ID]
+	}
+	return memories, nil
+}
+
+// filesFor loads the files of several submissions in one query. Every id gets
+// a list, even if it's empty, so the API always sends an array.
+func (s *SubmissionStore) filesFor(ctx context.Context, submissionIDs []string) (map[string][]MemoryFile, error) {
+	files := make(map[string][]MemoryFile, len(submissionIDs))
+	for _, id := range submissionIDs {
+		files[id] = []MemoryFile{}
+	}
+	if len(submissionIDs) == 0 {
+		return files, nil
+	}
+
+	rows, err := s.db.Query(ctx,
+		`SELECT submission_id, id, mime_type, storage_key, COALESCE(thumbnail_key, '')
+		 FROM media
+		 WHERE submission_id = ANY($1::uuid[])
+		 ORDER BY position, created_at`,
+		submissionIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var submissionID string
+		var f MemoryFile
+		if err := rows.Scan(&submissionID, &f.ID, &f.MimeType, &f.StorageKey, &f.ThumbnailKey); err != nil {
+			return nil, err
+		}
+		files[submissionID] = append(files[submissionID], f)
+	}
+	return files, rows.Err()
 }
 
 // ModerationItem is a submission as the organizer sees it, any status.
@@ -152,11 +208,9 @@ type ModerationItem struct {
 // if ownerID owns the event. Someone else's event looks empty, not forbidden.
 func (s *SubmissionStore) ListForOwner(ctx context.Context, eventID, ownerID string) ([]ModerationItem, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at,
-		        COALESCE(m.storage_key, ''), COALESCE(m.mime_type, ''), COALESCE(m.thumbnail_key, ''), s.status
+		`SELECT s.id, s.sender_name, s.type, COALESCE(s.message, ''), s.created_at, s.status
 		 FROM submissions s
 		 JOIN events e ON e.id = s.event_id
-		 LEFT JOIN media m ON m.submission_id = s.id
 		 WHERE s.event_id = $1 AND e.owner_id = $2
 		 ORDER BY s.created_at DESC`,
 		eventID, ownerID,
@@ -166,13 +220,28 @@ func (s *SubmissionStore) ListForOwner(ctx context.Context, eventID, ownerID str
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ModerationItem, error) {
 		var it ModerationItem
-		err := row.Scan(&it.ID, &it.SenderName, &it.Type, &it.Message, &it.CreatedAt, &it.StorageKey, &it.MimeType, &it.ThumbnailKey, &it.Status)
+		err := row.Scan(&it.ID, &it.SenderName, &it.Type, &it.Message, &it.CreatedAt, &it.Status)
 		return it, err
 	})
+	if err != nil {
+		return nil, err
+	}
 	if items == nil {
 		items = []ModerationItem{}
 	}
-	return items, err
+
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	files, err := s.filesFor(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Files = files[items[i].ID]
+	}
+	return items, nil
 }
 
 // UpdateStatus approves or rejects a submission. The owner check is part of
@@ -193,30 +262,34 @@ func (s *SubmissionStore) UpdateStatus(ctx context.Context, id, ownerID, status 
 	return nil
 }
 
-// DeleteForOwner removes a submission and returns the bucket keys of its
-// media and thumbnail, if any, so the caller can delete the files too.
+// DeleteForOwner removes a submission and returns the bucket keys of all its
+// files and thumbnails, so the caller can delete those too.
 func (s *SubmissionStore) DeleteForOwner(ctx context.Context, id, ownerID string) ([]string, error) {
-	var mediaKey, thumbKey string
+	var deleted int
+	var keys []string
 	err := s.db.QueryRow(ctx,
 		`WITH target AS (
-		     SELECT s.id, COALESCE(m.storage_key, '') AS storage_key, COALESCE(m.thumbnail_key, '') AS thumbnail_key
+		     SELECT s.id
 		     FROM submissions s
 		     JOIN events e ON e.id = s.event_id
-		     LEFT JOIN media m ON m.submission_id = s.id
 		     WHERE s.id = $1 AND e.owner_id = $2
+		 ),
+		 file_keys AS (
+		     SELECT unnest(ARRAY[m.storage_key, m.thumbnail_key]) AS key
+		     FROM media m JOIN target ON m.submission_id = target.id
+		 ),
+		 removed AS (
+		     DELETE FROM submissions USING target WHERE submissions.id = target.id RETURNING submissions.id
 		 )
-		 DELETE FROM submissions USING target WHERE submissions.id = target.id
-		 RETURNING target.storage_key, target.thumbnail_key`,
+		 SELECT (SELECT count(*) FROM removed),
+		        COALESCE((SELECT array_agg(key) FROM file_keys WHERE key IS NOT NULL), '{}')`,
 		id, ownerID,
-	).Scan(&mediaKey, &thumbKey)
-	if errors.Is(err, pgx.ErrNoRows) {
+	).Scan(&deleted, &keys)
+	if err != nil {
+		return nil, err
+	}
+	if deleted == 0 {
 		return nil, ErrNotFound
 	}
-	var keys []string
-	for _, k := range []string{mediaKey, thumbKey} {
-		if k != "" {
-			keys = append(keys, k)
-		}
-	}
-	return keys, err
+	return keys, nil
 }

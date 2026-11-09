@@ -666,3 +666,121 @@ func TestEmailConfirmation(t *testing.T) {
 		t.Fatalf("bad token: got %d, want 404", w.Code)
 	}
 }
+
+// TestMemoryWithSeveralFiles checks a memory keeps its files in order, gets a
+// job per video, and takes all of them with it when deleted.
+func TestMemoryWithSeveralFiles(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping database test")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	raw, suffix, _ := auth.NewToken()
+	organizers := store.NewOrganizerStore(db)
+	ownerID, err := organizers.Create(ctx, "files-"+suffix[:8]+"@test.example", "hash", "Owner")
+	if err != nil {
+		t.Fatalf("create organizer: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM organizers WHERE id = $1`, ownerID) })
+
+	events := store.NewEventStore(db)
+	eventID, err := events.Create(ctx, store.Event{OwnerID: ownerID, Title: "Files", Slug: "files-" + suffix[:8], ModerationEnabled: true})
+	if err != nil {
+		t.Fatalf("create event: %v", err)
+	}
+	invitations := store.NewInvitationStore(db)
+	if _, err := invitations.Create(ctx, eventID, store.NewInvitation{TokenHash: suffix, RecipientName: "Guest"}, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+
+	// Requests that fail before reaching the bucket.
+	submissions := store.NewSubmissionStore(db)
+	router := NewServer(Deps{Events: events, Invitations: invitations, Submissions: submissions, SiteURL: "http://localhost:3000"}).Routes()
+	post := func(files []uploadedFile) int {
+		body, _ := json.Marshal(submissionInput{SenderName: "Jo", Files: files})
+		r := httptest.NewRequest(http.MethodPost, "/api/invitations/"+raw+"/submissions", strings.NewReader(string(body)))
+		r.RemoteAddr = "192.0.2.77:1"
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w.Code
+	}
+	key := func(name string) string { return "events/" + eventID + "/" + name }
+	photo := func(name string) uploadedFile { return uploadedFile{key(name + ".jpg"), "image/jpeg"} }
+	tooMany := []uploadedFile{photo("a"), photo("b"), photo("c"), photo("d"), photo("e"), photo("f")}
+	for name, files := range map[string][]uploadedFile{
+		"six files":     tooMany,
+		"same file":     {photo("a"), photo("a")},
+		"another event": {{"events/other/a.jpg", "image/jpeg"}},
+		"wrong type":    {{key("a.exe"), "application/octet-stream"}},
+	} {
+		if code := post(files); code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", name, code)
+		}
+	}
+
+	files := []store.Media{
+		{StorageKey: key("first.jpg"), MimeType: "image/jpeg", FileSize: 1},
+		{StorageKey: key("second.mp4"), MimeType: "video/mp4", FileSize: 2},
+		{StorageKey: key("third.mov"), MimeType: "video/quicktime", FileSize: 3},
+	}
+	id, err := submissions.Create(ctx, store.Submission{EventID: eventID, SenderName: "Jo", Type: "photo", Status: "approved"}, files)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Exec(context.Background(), `DELETE FROM jobs WHERE payload->>'media_id' IS NOT NULL AND NOT EXISTS (SELECT 1 FROM media m WHERE m.id::text = payload->>'media_id')`)
+	})
+
+	memories, err := submissions.ListApprovedBySlug(ctx, "files-"+suffix[:8])
+	if err != nil || len(memories) != 1 {
+		t.Fatalf("list: %v %v", memories, err)
+	}
+	var got []string
+	for _, f := range memories[0].Files {
+		got = append(got, f.StorageKey)
+	}
+	if len(got) != 3 || got[0] != key("first.jpg") || got[2] != key("third.mov") {
+		t.Fatalf("files out of order: %v", got)
+	}
+
+	var videoJobs int
+	err = db.QueryRow(ctx,
+		`SELECT count(*) FROM jobs j JOIN media m ON m.id::text = j.payload->>'media_id' WHERE m.submission_id = $1 AND j.type = $2`,
+		id, store.JobProcessVideo,
+	).Scan(&videoJobs)
+	if err != nil || videoJobs != 2 {
+		t.Fatalf("video jobs = %d, %v, want 2", videoJobs, err)
+	}
+
+	// A note still lists an empty array, and someone else can't delete this.
+	noteID, err := submissions.Create(ctx, store.Submission{EventID: eventID, SenderName: "Al", Type: "note", Message: "hi", Status: "approved"}, nil)
+	if err != nil {
+		t.Fatalf("create note: %v", err)
+	}
+	items, err := submissions.ListForOwner(ctx, eventID, ownerID)
+	if err != nil || len(items) != 2 || items[0].ID != noteID || items[0].Files == nil || len(items[1].Files) != 3 {
+		t.Fatalf("moderation list: %+v %v", items, err)
+	}
+	strangerID, err := organizers.Create(ctx, "stranger-"+suffix[:8]+"@test.example", "hash", "Other")
+	if err != nil {
+		t.Fatalf("create stranger: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM organizers WHERE id = $1`, strangerID) })
+	if _, err := submissions.DeleteForOwner(ctx, id, strangerID); err != store.ErrNotFound {
+		t.Fatalf("stranger delete: %v", err)
+	}
+
+	if _, err := db.Exec(ctx, `UPDATE media SET thumbnail_key = 'thumb.jpg' WHERE storage_key = $1`, key("second.mp4")); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := submissions.DeleteForOwner(ctx, id, ownerID)
+	if err != nil || len(keys) != 4 {
+		t.Fatalf("delete should return 3 files and a thumbnail: %v %v", keys, err)
+	}
+}

@@ -51,18 +51,19 @@ func (s *Server) getMemories(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"event": event, "memories": memories})
 }
 
-// signMediaURLs fills in temporary links for a memory's file and thumbnail.
+// signMediaURLs fills in temporary links for a memory's files and thumbnails.
 // The bucket is private, so each link is signed and expires after an hour.
 func (s *Server) signMediaURLs(ctx context.Context, m *store.Memory) error {
-	var err error
-	if m.StorageKey != "" {
-		if m.MediaURL, err = s.storage.PresignGet(ctx, m.StorageKey, time.Hour); err != nil {
+	for i := range m.Files {
+		file := &m.Files[i]
+		var err error
+		if file.URL, err = s.storage.PresignGet(ctx, file.StorageKey, time.Hour); err != nil {
 			return err
 		}
-	}
-	if m.ThumbnailKey != "" {
-		if m.ThumbnailURL, err = s.storage.PresignGet(ctx, m.ThumbnailKey, time.Hour); err != nil {
-			return err
+		if file.ThumbnailKey != "" {
+			if file.ThumbnailURL, err = s.storage.PresignGet(ctx, file.ThumbnailKey, time.Hour); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
