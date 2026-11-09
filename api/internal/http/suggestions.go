@@ -36,7 +36,26 @@ func (s *Server) suggestMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	suggestions, err := s.ai.SuggestMessages(r.Context(), invitation.RecipientName, input.SenderName, input.Tone, input.Detail)
+	event, err := s.events.GetByID(r.Context(), invitation.EventID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "could not look up event")
+		return
+	}
+
+	// The invitation's name is the guest, so it's only a fallback for the sender.
+	sender := input.SenderName
+	if sender == "" {
+		sender = invitation.RecipientName
+	}
+
+	suggestions, err := s.ai.SuggestMessages(r.Context(), ai.Request{
+		EventTitle:  event.Title,
+		Occasion:    event.Occasion,
+		HonoreeName: event.HonoreeName,
+		SenderName:  sender,
+		Tone:        input.Tone,
+		Detail:      input.Detail,
+	})
 	if errors.Is(err, ai.ErrDeclined) {
 		writeError(w, http.StatusUnprocessableEntity, "declined", "couldn't write suggestions for that, try different wording")
 		return

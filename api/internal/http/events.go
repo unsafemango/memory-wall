@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/unsafemango/memory-wall/internal/ai"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
 
@@ -26,6 +27,8 @@ type eventInput struct {
 	EventDate         string `json:"event_date"` // "2026-11-14", optional
 	ClosingMessage    string `json:"closing_message"`
 	ModerationEnabled bool   `json:"moderation_enabled"`
+	Occasion          string `json:"occasion"`     // one of ai.Occasions, optional
+	HonoreeName       string `json:"honoree_name"` // who the event is for, optional
 }
 
 // decodeEvent reads and validates an event from the request body. On failure
@@ -39,6 +42,7 @@ func decodeEvent(w http.ResponseWriter, r *http.Request) (eventInput, bool) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Slug = strings.TrimSpace(input.Slug)
 	input.ClosingMessage = strings.TrimSpace(input.ClosingMessage)
+	input.HonoreeName = strings.TrimSpace(input.HonoreeName)
 
 	if input.Title == "" || len(input.Title) > 200 {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a title of up to 200 characters is required")
@@ -58,6 +62,17 @@ func decodeEvent(w http.ResponseWriter, r *http.Request) (eventInput, bool) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "the closing message is too long")
 		return input, false
 	}
+	if input.Occasion == "" {
+		input.Occasion = ai.OccasionOther
+	}
+	if !ai.IsOccasion(input.Occasion) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pick one of the listed occasions")
+		return input, false
+	}
+	if len(input.HonoreeName) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "the name of who it's for is too long")
+		return input, false
+	}
 	return input, true
 }
 
@@ -75,6 +90,8 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 		EventDate:         input.EventDate,
 		ClosingMessage:    input.ClosingMessage,
 		ModerationEnabled: input.ModerationEnabled,
+		Occasion:          input.Occasion,
+		HonoreeName:       input.HonoreeName,
 	})
 	if errors.Is(err, store.ErrDuplicate) {
 		writeError(w, http.StatusConflict, "slug_taken", "that link is already taken, try another")
@@ -199,6 +216,8 @@ func (s *Server) updateEvent(w http.ResponseWriter, r *http.Request) {
 		EventDate:         input.EventDate,
 		ClosingMessage:    input.ClosingMessage,
 		ModerationEnabled: input.ModerationEnabled,
+		Occasion:          input.Occasion,
+		HonoreeName:       input.HonoreeName,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "event not found")

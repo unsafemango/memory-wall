@@ -82,6 +82,8 @@ func (s *Server) getInvitation(w http.ResponseWriter, r *http.Request) {
 			"slug":               event.Slug,
 			"event_date":         event.EventDate,
 			"moderation_enabled": event.ModerationEnabled,
+			"occasion":           event.Occasion,
+			"honoree_name":       event.HonoreeName,
 		},
 	})
 }

@@ -16,6 +16,8 @@ type Event struct {
 	EventDate         string `json:"event_date,omitempty"` // "2026-11-14", empty when not set
 	ClosingMessage    string `json:"closing_message,omitempty"`
 	ModerationEnabled bool   `json:"moderation_enabled"`
+	Occasion          string `json:"occasion"`
+	HonoreeName       string `json:"honoree_name,omitempty"`
 	// ShareToken is the event's reusable link. It's never sent as-is; the
 	// organizer endpoints turn it into ShareURL.
 	ShareToken   string `json:"-"`
@@ -31,12 +33,12 @@ func NewEventStore(db *pgxpool.Pool) *EventStore {
 }
 
 const eventColumns = `id, COALESCE(owner_id::text, ''), title, slug, COALESCE(event_date::text, ''),
-	COALESCE(closing_message, ''), moderation_enabled, share_token, share_enabled`
+	COALESCE(closing_message, ''), moderation_enabled, occasion, COALESCE(honoree_name, ''), share_token, share_enabled`
 
 func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	var e Event
 	err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage, &e.ModerationEnabled,
-		&e.ShareToken, &e.ShareEnabled)
+		&e.Occasion, &e.HonoreeName, &e.ShareToken, &e.ShareEnabled)
 	return e, err
 }
 
@@ -51,9 +53,10 @@ func (s *EventStore) GetByID(ctx context.Context, id string) (Event, error) {
 func (s *EventStore) Create(ctx context.Context, e Event) (string, error) {
 	var id string
 	err := s.db.QueryRow(ctx,
-		`INSERT INTO events (owner_id, title, slug, event_date, closing_message, moderation_enabled)
-		 VALUES ($1, $2, $3, NULLIF($4, '')::date, NULLIF($5, ''), $6) RETURNING id`,
-		e.OwnerID, e.Title, e.Slug, e.EventDate, e.ClosingMessage, e.ModerationEnabled,
+		`INSERT INTO events (owner_id, title, slug, event_date, closing_message, moderation_enabled, occasion, honoree_name)
+		 VALUES ($1, $2, $3, NULLIF($4, '')::date, NULLIF($5, ''), $6, COALESCE(NULLIF($7, ''), 'other'), NULLIF($8, ''))
+		 RETURNING id`,
+		e.OwnerID, e.Title, e.Slug, e.EventDate, e.ClosingMessage, e.ModerationEnabled, e.Occasion, e.HonoreeName,
 	).Scan(&id)
 	return id, mapDuplicate(err)
 }
@@ -71,7 +74,8 @@ type EventSummary struct {
 func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSummary, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT e.id, COALESCE(e.owner_id::text, ''), e.title, e.slug, COALESCE(e.event_date::text, ''),
-		        COALESCE(e.closing_message, ''), e.moderation_enabled, e.share_token, e.share_enabled,
+		        COALESCE(e.closing_message, ''), e.moderation_enabled, e.occasion, COALESCE(e.honoree_name, ''),
+		        e.share_token, e.share_enabled,
 		        COUNT(s.id) FILTER (WHERE s.status = 'pending'),
 		        COUNT(s.id) FILTER (WHERE s.status = 'approved')
 		 FROM events e
@@ -87,7 +91,8 @@ func (s *EventStore) ListByOwner(ctx context.Context, ownerID string) ([]EventSu
 	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EventSummary, error) {
 		var e EventSummary
 		err := row.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Slug, &e.EventDate, &e.ClosingMessage,
-			&e.ModerationEnabled, &e.ShareToken, &e.ShareEnabled, &e.PendingCount, &e.ApprovedCount)
+			&e.ModerationEnabled, &e.Occasion, &e.HonoreeName, &e.ShareToken, &e.ShareEnabled,
+			&e.PendingCount, &e.ApprovedCount)
 		return e, err
 	})
 	if events == nil {
@@ -113,9 +118,10 @@ func (s *EventStore) GetOwned(ctx context.Context, id, ownerID string) (Event, e
 func (s *EventStore) Update(ctx context.Context, e Event) error {
 	tag, err := s.db.Exec(ctx,
 		`UPDATE events SET title = $3, slug = $4, event_date = NULLIF($5, '')::date,
-		        closing_message = NULLIF($6, ''), moderation_enabled = $7
+		        closing_message = NULLIF($6, ''), moderation_enabled = $7,
+		        occasion = COALESCE(NULLIF($8, ''), 'other'), honoree_name = NULLIF($9, '')
 		 WHERE id = $1 AND owner_id = $2`,
-		e.ID, e.OwnerID, e.Title, e.Slug, e.EventDate, e.ClosingMessage, e.ModerationEnabled,
+		e.ID, e.OwnerID, e.Title, e.Slug, e.EventDate, e.ClosingMessage, e.ModerationEnabled, e.Occasion, e.HonoreeName,
 	)
 	if err != nil {
 		return mapDuplicate(err)
