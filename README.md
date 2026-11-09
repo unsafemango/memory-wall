@@ -8,7 +8,7 @@ Memory Wall is a private, shared page for any occasion: a birthday, a wedding, a
 - **Countdown and reveal:** the page counts down to the event, and memories can stay hidden until it ends, then open on every page at once.
 - **Invitations:** a reusable share link for large groups, plus single-use personal links created individually or in bulk from a list of names.
 - **Moderation:** submissions are held for review by default and can be approved, hidden, or deleted.
-- **Photo and video uploads:** files upload directly to object storage, and videos are processed in the background.
+- **Photo and video uploads:** each memory can hold up to five files, which upload directly to object storage and open full size on the page. Videos are processed in the background.
 - **Writing assistant:** guests can request three drafts in a chosen tone, optionally built around a personal detail.
 - **Email notifications:** organizers confirm their address and get an email about new memories, batched to at most one per event every 10 minutes.
 - **Live updates:** new submissions reach the organizer's dashboard, and approved memories reach the event page, without a reload.

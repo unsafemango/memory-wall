@@ -1,12 +1,13 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { API_URL, apiError, errorMessage } from "@/lib/api";
 import { formatDate, isFuture, timeToGo } from "@/lib/format";
 import { Confetti } from "../../[slug]/Confetti";
 import { occasionFor } from "@/lib/occasions";
-import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
+import { uploadFile, type UploadedFile } from "@/lib/upload";
+import { FilePicker, type PickedFile } from "./FilePicker";
 
 const MAX_MESSAGE = 5000;
 
@@ -46,10 +47,6 @@ function linkProblem(code: string): LinkProblem {
   }
 }
 
-function formatSize(bytes: number) {
-  return bytes >= 1 << 20 ? `${(bytes / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
   const [invitation, setInvitation] = useState<Invitation | null>(null);
@@ -63,20 +60,27 @@ export default function InvitePage() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [nameError, setNameError] = useState("");
+  const [helperOpen, setHelperOpen] = useState(false);
+  const [tone, setTone] = useState("");
+  // What the message said before a suggestion replaced it, so it can come back.
+  const [beforeSuggestion, setBeforeSuggestion] = useState<string | null>(null);
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const [uploading, setUploading] = useState<{ number: number; progress: number } | null>(null);
+  const sending = useRef(false);
   const messageBox = useRef<HTMLTextAreaElement>(null);
+  const nameBox = useRef<HTMLInputElement>(null);
 
-  // A local preview of the chosen photo, released when the file changes.
-  const previewURL = useMemo(() => (file?.type.startsWith("image/") ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => {
-    if (previewURL) URL.revokeObjectURL(previewURL);
-  }, [previewURL]);
+  // The message box grows with what's written, so nothing scrolls out of sight.
+  useEffect(() => {
+    const box = messageBox.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight}px`;
+  }, [message, invitation, submitted]);
 
-  function clearFile() {
-    setFile(null);
-    if (fileInput.current) fileInput.current.value = "";
+  function updateFile(id: string, change: Partial<PickedFile>) {
+    setFiles((current) => current.map((it) => (it.id === id ? { ...it, ...change } : it)));
   }
 
   // Check the link first, so a bad link fails before anyone writes a message.
@@ -97,14 +101,14 @@ export default function InvitePage() {
       );
   }, [token]);
 
-  async function getSuggestions(tone: string) {
+  async function getSuggestions(chosenTone: string) {
     setLoadingSuggestions(true);
     setSuggestionError("");
     try {
       const res = await fetch(`${API_URL}/api/invitations/${token}/suggest-message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_name: senderName, tone, detail }),
+        body: JSON.stringify({ sender_name: senderName, tone: chosenTone, detail }),
       });
       if (!res.ok) {
         setSuggestionError(await errorMessage(res));
@@ -120,14 +124,19 @@ export default function InvitePage() {
   }
 
   function pickSuggestion(text: string) {
+    setBeforeSuggestion(message);
     setMessage(text);
+    setHelperOpen(false);
     messageBox.current?.focus();
   }
 
   // Share links can be used again, so a guest can leave a second memory.
   function startAnother() {
     setMessage("");
-    clearFile();
+    files.forEach((it) => URL.revokeObjectURL(it.previewURL));
+    setFiles([]);
+    setBeforeSuggestion(null);
+    setHelperOpen(false);
     setSuggestions([]);
     setDetail("");
     setFormError("");
@@ -136,23 +145,55 @@ export default function InvitePage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!message.trim() && !file) {
+    // Pressing Enter in a field can submit even while the button is disabled.
+    if (sending.current) return;
+    let missing = false;
+    setNameError("");
+    setFormError("");
+    if (!message.trim() && files.length === 0) {
       setFormError("Write a message or add a photo or video first.");
       messageBox.current?.focus();
-      return;
+      missing = true;
     }
+    if (!senderName.trim()) {
+      setNameError("Add your name so they know who it's from.");
+      nameBox.current?.focus();
+      missing = true;
+    }
+    if (missing) return;
+
+    sending.current = true;
     setSubmitting(true);
-    setFormError("");
     try {
-      let media = {};
-      if (file) {
-        setUploadProgress(0);
-        media = await uploadFile(token, file, setUploadProgress);
+      // One at a time, keeping what's done. If one fails, sending again only
+      // uploads the ones that didn't make it.
+      const uploaded: UploadedFile[] = [];
+      for (const [i, item] of files.entries()) {
+        if (item.uploaded) {
+          uploaded.push(item.uploaded);
+          continue;
+        }
+        setUploading({ number: i + 1, progress: 0 });
+        updateFile(item.id, { progress: 0, failed: false });
+        try {
+          const done = await uploadFile(token, item.file, (progress) => {
+            setUploading({ number: i + 1, progress });
+            updateFile(item.id, { progress });
+          });
+          updateFile(item.id, { progress: null, uploaded: done });
+          uploaded.push(done);
+        } catch (err) {
+          updateFile(item.id, { progress: null, failed: true });
+          const reason = err instanceof Error && err.message ? err.message : "The upload failed.";
+          setFormError(`${item.file.name} didn't upload. ${reason} Press send to try again, or remove it.`);
+          return;
+        }
       }
+
       const res = await fetch(`${API_URL}/api/invitations/${token}/submissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_name: senderName, message, ...media }),
+        body: JSON.stringify({ sender_name: senderName, message, files: uploaded }),
       });
       if (!res.ok) {
         setFormError(await errorMessage(res));
@@ -160,11 +201,12 @@ export default function InvitePage() {
       }
       setSubmitted(true);
       window.scrollTo({ top: 0 });
-    } catch (err) {
-      setFormError(err instanceof Error && err.message ? err.message : "We couldn't reach the server. Try again in a minute.");
+    } catch {
+      setFormError("We couldn't reach the server. Try again in a minute.");
     } finally {
+      sending.current = false;
       setSubmitting(false);
-      setUploadProgress(null);
+      setUploading(null);
     }
   }
 
@@ -220,12 +262,12 @@ export default function InvitePage() {
     );
   }
 
-  const sendLabel =
-    uploadProgress !== null
-      ? `Uploading… ${Math.round(uploadProgress * 100)}%`
-      : submitting
-        ? "Sending…"
-        : "Send my memory";
+  const activeTone = tone || occasion.tones[0].key;
+  const sendLabel = uploading
+    ? `Uploading ${files.length > 1 ? `${uploading.number} of ${files.length}` : "your file"}… ${Math.round(uploading.progress * 100)}%`
+    : submitting
+      ? "Sending…"
+      : "Send my memory";
 
   return (
     <main className="wall">
@@ -241,100 +283,126 @@ export default function InvitePage() {
         </p>
 
         <form onSubmit={handleSubmit} className="invite-form" noValidate>
-          <label>
-            Your name
+          <div className="field">
+            <label htmlFor="sender-name" className="field-label">Your name</label>
             <input
+              id="sender-name"
+              ref={nameBox}
               value={senderName}
-              onChange={(e) => setSenderName(e.target.value)}
+              onChange={(e) => {
+                setSenderName(e.target.value);
+                setNameError("");
+              }}
               required
               maxLength={100}
               autoComplete="name"
               placeholder="How it'll appear on the page"
+              aria-invalid={Boolean(nameError)}
+              aria-describedby={nameError ? "name-error" : undefined}
             />
-          </label>
+            {nameError && <p className="form-error" id="name-error" role="alert">{nameError}</p>}
+          </div>
 
           <div className="field">
             <label htmlFor="message" className="field-label">Your message</label>
-            <textarea
-              id="message"
-              ref={messageBox}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              maxLength={MAX_MESSAGE}
-              placeholder={file ? "Add a caption (optional)" : occasion.messagePrompt}
-              aria-describedby="message-count"
-            />
+            <div className="composer">
+              <textarea
+                id="message"
+                ref={messageBox}
+                value={message}
+                rows={4}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  setBeforeSuggestion(null);
+                  setFormError("");
+                }}
+                maxLength={MAX_MESSAGE}
+                placeholder={files.length > 0 ? "Add a caption (optional)" : occasion.messagePrompt}
+                aria-describedby="message-count"
+              />
+              <div className="composer-bar">
+                <button
+                  type="button"
+                  className={helperOpen ? "composer-tool on" : "composer-tool"}
+                  aria-expanded={helperOpen}
+                  aria-controls="writing-helper"
+                  onClick={() => setHelperOpen((v) => !v)}
+                >
+                  <span aria-hidden="true">✦</span> Help me write
+                </button>
+              </div>
+              {helperOpen && (
+                <div className="helper" id="writing-helper">
+                  <label>
+                    What should it mention?
+                    <input
+                      value={detail}
+                      onChange={(e) => setDetail(e.target.value)}
+                      placeholder="An inside joke, a trip, a memory"
+                      maxLength={300}
+                    />
+                  </label>
+                  <div className="chips" role="radiogroup" aria-label="Tone">
+                    {occasion.tones.map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={activeTone === t.key}
+                        className={activeTone === t.key ? "chip on" : "chip"}
+                        onClick={() => setTone(t.key)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" className="helper-go" disabled={loadingSuggestions} onClick={() => getSuggestions(activeTone)}>
+                    {loadingSuggestions ? "Writing a few ideas…" : suggestions.length > 0 ? "Try again" : "Write 3 ideas"}
+                  </button>
+                  {suggestionError && <p className="form-error" role="alert">{suggestionError}</p>}
+                  <div className="suggestions" aria-live="polite">
+                    {suggestions.map((s, i) => (
+                      <div className="suggestion" key={i}>
+                        <p>{s}</p>
+                        <button type="button" className="suggestion-use" onClick={() => pickSuggestion(s)}>Use this</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <span id="message-count" className="char-count">
               {message.length > MAX_MESSAGE - 500 ? `${MAX_MESSAGE - message.length} characters left` : ""}
             </span>
-          </div>
-
-          <details className="helper" open={suggestions.length > 0 || undefined}>
-            <summary className="helper-title">Not sure what to say? Get some ideas</summary>
-            <div className="helper-body">
-              <input
-                value={detail}
-                onChange={(e) => setDetail(e.target.value)}
-                placeholder="Optional: an inside joke, a trip, a memory…"
-                aria-label="Something to mention"
-                maxLength={300}
-              />
-              <div className="chips" role="group" aria-label="Pick a tone">
-                {occasion.tones.map((tone) => (
-                  <button key={tone.key} type="button" className="chip" disabled={loadingSuggestions} onClick={() => getSuggestions(tone.key)}>
-                    {tone.label}
-                  </button>
-                ))}
-              </div>
-              {loadingSuggestions && <p className="invite-status" aria-live="polite">Writing a few ideas…</p>}
-              {suggestionError && <p className="form-error">{suggestionError}</p>}
-              {suggestions.length > 0 && <p className="field-hint">Tap one to use it, then make it your own.</p>}
-              {suggestions.map((s, i) => (
-                <button type="button" key={i} className="suggestion" onClick={() => pickSuggestion(s)}>
-                  {s}
+            {beforeSuggestion !== null && (
+              <p className="field-hint">
+                Added to your message. Make it your own, or{" "}
+                <button
+                  type="button"
+                  className="suggestion-use"
+                  onClick={() => {
+                    setMessage(beforeSuggestion);
+                    setBeforeSuggestion(null);
+                  }}
+                >
+                  undo
                 </button>
-              ))}
-            </div>
-          </details>
-
-          <div className="file-field">
-            <span className="field-label" id="file-label">Add a photo or video (optional)</span>
-            <label className={file ? "file-picker has-file" : "file-picker"}>
-              <input
-                ref={fileInput}
-                type="file"
-                className="visually-hidden"
-                accept={ACCEPTED_FILE_TYPES}
-                aria-labelledby="file-label"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-              {previewURL ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className="file-preview" src={previewURL} alt="" />
-              ) : (
-                <span className="file-icon" aria-hidden="true">+</span>
-              )}
-              <span className="file-text">
-                <span className="file-name">{file ? file.name : "Choose a photo or video"}</span>
-                <span className="file-hint">
-                  {file ? formatSize(file.size) : "Photos up to 15 MB, videos up to 100 MB"}
-                </span>
-              </span>
-            </label>
-            {file && !submitting && (
-              <button type="button" className="file-remove" onClick={clearFile}>
-                Remove
-              </button>
+                .
+              </p>
             )}
           </div>
 
-          {uploadProgress !== null && (
-            <progress value={uploadProgress} max={1} aria-label="Upload progress">
-              {Math.round(uploadProgress * 100)}%
-            </progress>
-          )}
+          <FilePicker
+            items={files}
+            locked={submitting}
+            onChange={(next) => {
+              setFiles(next);
+              setFormError("");
+            }}
+          />
+
           {formError && <p className="form-error" role="alert">{formError}</p>}
-          <button type="submit" disabled={submitting || !senderName.trim()} className="wall-button">
+          <button type="submit" disabled={submitting} className="wall-button">
             {sendLabel}
           </button>
           {event.moderation_enabled && (

@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { api, errorMessage } from "@/lib/api";
 import type { ModerationItem } from "@/lib/types";
+import { Gallery } from "../../../[slug]/Gallery";
 import { useManage } from "./context";
 
 type Status = ModerationItem["status"];
@@ -26,19 +27,10 @@ function SubmissionCard({ item, onAction }: { item: ModerationItem; onAction: (i
 
   return (
     <li className="panel submission">
-      {item.type === "photo" && item.media_url && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img className="submission-media" src={item.media_url} alt={`Photo from ${item.sender_name}`} />
-      )}
-      {item.type === "video" && item.media_url && (
-        <video
-          className="submission-media"
-          src={item.media_url}
-          poster={item.thumbnail_url}
-          controls
-          playsInline
-          preload="metadata"
-        />
+      {item.files.length > 0 && (
+        <div className="submission-media">
+          <Gallery files={item.files} sender={item.sender_name} />
+        </div>
       )}
       {item.message && <p className="submission-message">{item.message}</p>}
       <p className="submission-meta">

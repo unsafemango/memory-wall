@@ -15,16 +15,21 @@ export type EventInfo = {
   hide_until_event?: boolean;
 };
 
+export type MemoryFile = {
+  id: string;
+  mime_type: string;
+  url?: string;
+  // Set for videos once the background job has made a thumbnail.
+  thumbnail_url?: string;
+};
+
 export type Memory = {
   id: string;
   sender_name: string;
   type: "note" | "photo" | "video";
   message: string;
   created_at: string;
-  mime_type?: string;
-  media_url?: string;
-  // Set for videos once the background job has made a thumbnail.
-  thumbnail_url?: string;
+  files: MemoryFile[];
 };
 
 export type OrganizerEvent = EventInfo & {
