@@ -4,6 +4,8 @@ export type EventInfo = {
   slug: string;
   event_date?: string;
   closing_message?: string;
+  occasion?: string;
+  honoree_name?: string;
 };
 
 export type Memory = {

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api, errorMessage } from "@/lib/api";
+import { OCCASIONS, occasionFor } from "@/lib/occasions";
 import { useOrigin } from "@/lib/useOrigin";
 import type { OrganizerEvent } from "@/lib/types";
 
@@ -22,6 +23,8 @@ type Props = {
 };
 
 export function EventForm({ event, onSaved, onCancel }: Props) {
+  const [occasion, setOccasion] = useState(event?.occasion ?? "");
+  const [honoreeName, setHonoreeName] = useState(event?.honoree_name ?? "");
   const [title, setTitle] = useState(event?.title ?? "");
   const [slug, setSlug] = useState(event?.slug ?? "");
   const [slugEdited, setSlugEdited] = useState(Boolean(event));
@@ -30,6 +33,7 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
   const [moderationEnabled, setModerationEnabled] = useState(event?.moderation_enabled ?? true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const details = occasionFor(occasion);
   const host = useOrigin().replace(/^https?:\/\//, "");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -43,6 +47,8 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
         event_date: eventDate,
         closing_message: closingMessage,
         moderation_enabled: moderationEnabled,
+        occasion,
+        honoree_name: honoreeName,
       });
       const res = event
         ? await api(`/api/organizer/events/${event.id}`, { method: "PATCH", body })
@@ -62,8 +68,28 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="form">
+      <fieldset className="field choice-field">
+        <legend className="field-name">What&apos;s the occasion?</legend>
+        <div className="choices occasion-choices">
+          {OCCASIONS.map((o) => (
+            <label key={o.key} className="choice">
+              <input
+                type="radio"
+                name={event ? `occasion-${event.id}` : "occasion"}
+                value={o.key}
+                checked={occasion === o.key}
+                onChange={() => setOccasion(o.key)}
+                required
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+        <span className="field-hint">This helps the writing assistant suggest the right words.</span>
+      </fieldset>
+
       <label className="field">
-        <span className="field-name">What are you celebrating?</span>
+        <span className="field-name">Event name</span>
         <input
           className="input"
           value={title}
@@ -71,8 +97,19 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
             setTitle(e.target.value);
             if (!slugEdited) setSlug(toSlug(e.target.value));
           }}
-          placeholder="Sarah's 30th Birthday"
+          placeholder={details.titleExample}
           required
+          maxLength={200}
+        />
+      </label>
+
+      <label className="field">
+        <span className="field-name">{details.honoreeLabel} (optional)</span>
+        <input
+          className="input"
+          value={honoreeName}
+          onChange={(e) => setHonoreeName(e.target.value)}
+          placeholder={details.honoreeExample}
           maxLength={200}
         />
       </label>

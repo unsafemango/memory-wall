@@ -1512,3 +1512,8 @@ textarea.input {
     translate: 0 12px;
   }
 }
+
+/* Occasion picker in the event form */
+.occasion-choices {
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}

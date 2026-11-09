@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { API_URL, apiError, errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { occasionFor } from "@/lib/occasions";
 import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
 
 const MAX_MESSAGE = 5000;
@@ -13,7 +14,7 @@ type Invitation = {
   recipient_name: string;
   // True for the event's share link, which anyone can use more than once.
   shared: boolean;
-  event: { title: string; slug: string; event_date?: string; moderation_enabled: boolean };
+  event: { title: string; slug: string; event_date?: string; moderation_enabled: boolean; occasion?: string };
 };
 
 type LinkProblem = { title: string; body: string };
@@ -187,6 +188,7 @@ export default function InvitePage() {
   }
 
   const { event } = invitation;
+  const occasion = occasionFor(event.occasion);
 
   if (submitted) {
     return (
@@ -252,7 +254,7 @@ export default function InvitePage() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               maxLength={MAX_MESSAGE}
-              placeholder={file ? "Add a caption (optional)" : "Share a memory, a wish, or what they mean to you"}
+              placeholder={file ? "Add a caption (optional)" : occasion.messagePrompt}
               aria-describedby="message-count"
             />
             <span id="message-count" className="char-count">
@@ -271,13 +273,9 @@ export default function InvitePage() {
                 maxLength={300}
               />
               <div className="chips" role="group" aria-label="Pick a tone">
-                {[
-                  ["heartfelt", "Heartfelt"],
-                  ["funny", "Funny"],
-                  ["short", "Short and sweet"],
-                ].map(([tone, label]) => (
-                  <button key={tone} type="button" className="chip" disabled={loadingSuggestions} onClick={() => getSuggestions(tone)}>
-                    {label}
+                {occasion.tones.map((tone) => (
+                  <button key={tone.key} type="button" className="chip" disabled={loadingSuggestions} onClick={() => getSuggestions(tone.key)}>
+                    {tone.label}
                   </button>
                 ))}
               </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { formatDate } from "@/lib/format";
+import { occasionFor } from "@/lib/occasions";
 import type { EventInfo, Memory } from "@/lib/types";
 import { Confetti } from "./Confetti";
 import { LiveWall } from "./LiveWall";
@@ -28,14 +29,17 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   if (!data) notFound();
 
   const { event, memories } = data;
+  const occasion = occasionFor(event.occasion);
 
   return (
     <main className="wall">
       <section className="hero">
-        <Confetti />
-        <span className="hero-eyebrow">{event.event_date ? formatDate(event.event_date) : "A very special day"}</span>
+        {occasion.celebration && <Confetti />}
+        {(event.event_date || occasion.celebration) && (
+          <span className="hero-eyebrow">{event.event_date ? formatDate(event.event_date) : "A very special day"}</span>
+        )}
         <h1 className="name">{event.title}</h1>
-        <p className="hero-sub">A few people who love you wanted to leave you something.</p>
+        <p className="hero-sub">{occasion.heroLine}</p>
       </section>
 
       <LiveWall slug={event.slug} initial={memories} />
@@ -45,7 +49,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
           <div className="message-wrap">
             <div className="tag">For {event.title}</div>
             <p>{event.closing_message}</p>
-            <div className="signoff">With love, always</div>
+            <div className="signoff">{occasion.signoff}</div>
           </div>
         </section>
       )}
