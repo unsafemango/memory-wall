@@ -1,7 +1,6 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
-import type { InvitationInfo } from "@/lib/types";
 import { copyText } from "../../../components/copy";
 import { inviteMessage } from "./invites";
 
@@ -10,13 +9,6 @@ const MAX_NAMES = 200;
 
 function shortDate(d: Date) {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-function status(inv: InvitationInfo): { text: string; className: string } {
-  if (inv.used_at) return { text: "Used", className: "badge badge-good" };
-  if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { text: "Expired", className: "badge" };
-  if (inv.expires_at) return { text: `Open until ${shortDate(new Date(inv.expires_at))}`, className: "badge" };
-  return { text: "Open", className: "badge" };
 }
 
 type Duration = { key: string; label: string; days: number };
@@ -65,16 +57,15 @@ type Props = {
   eventTitle: string;
   eventSlug: string;
   eventDate?: string;
+  onCreated: () => void;
   onToast: (message: string) => void;
 };
 
-export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast }: Props) {
+export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onCreated, onToast }: Props) {
   // The clock is read once, when the panel opens, so the dates don't shift while it's on screen.
   const [now] = useState(() => Date.now());
   const options = useMemo(() => durations(now, eventDate), [now, eventDate]);
   const [mode, setMode] = useState<"one" | "list">("one");
-  const [invitations, setInvitations] = useState<InvitationInfo[]>([]);
-  const [openID, setOpenID] = useState<string | null>(null);
   const [recipientName, setRecipientName] = useState("");
   const [namesText, setNamesText] = useState("");
   const [durationKey, setDurationKey] = useState("month");
@@ -85,16 +76,6 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
   const duration = options.find((o) => o.key === durationKey) ?? options[0];
   const endsOn = new Date(now + duration.days * DAY);
   const names = useMemo(() => parseNames(namesText), [namesText]);
-
-  const load = useCallback(() => {
-    api(`/api/organizer/events/${eventID}/invitations`)
-      .then(async (res) => {
-        if (res.ok) setInvitations(await res.json());
-      })
-      .catch(() => setError("We couldn't load invitations."));
-  }, [eventID]);
-
-  useEffect(load, [load]);
 
   async function copy(text: string, label: string) {
     onToast((await copyText(text)) ? `${label} copied` : "Couldn't copy, select the text instead");
@@ -138,7 +119,7 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
         setNamesText("");
       }
       setCreated(links);
-      load();
+      onCreated();
     } catch {
       setError("We couldn't reach the server. Try again in a minute.");
     } finally {
@@ -162,9 +143,8 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
 
   return (
     <section className="panel">
-      <h2 className="section-title">Personal links</h2>
       <p className="section-sub">
-        For greeting someone by name and seeing who has posted. Each personal link works once.
+        Greet someone by name and see who has posted. Each personal link works once.
       </p>
 
       <div className="choices mode-switch" role="radiogroup" aria-label="Who to invite">
@@ -306,69 +286,6 @@ export function Invitations({ eventID, eventTitle, eventSlug, eventDate, onToast
         </div>
       )}
 
-      {invitations.length > 0 && (
-        <details className="sent-list">
-          <summary className="list-title">
-            Sent ({invitations.length}) · {invitations.filter((i) => i.used_at).length} posted
-          </summary>
-          <ul className="invite-list">
-            {invitations.map((inv) => {
-              const st = status(inv);
-              const name = inv.recipient_name || "Unnamed guest";
-              const open = openID === inv.id;
-              return (
-                <li key={inv.id} className={open ? "invite-row open" : "invite-row"}>
-                  <button
-                    type="button"
-                    className="invite-row-toggle"
-                    aria-expanded={open}
-                    onClick={() => setOpenID(open ? null : inv.id)}
-                  >
-                    <span className="invite-name">{name}</span>
-                    <span className="invite-row-end">
-                      <span className={st.className}>{st.text}</span>
-                      <span className="chevron" aria-hidden="true">›</span>
-                    </span>
-                  </button>
-                  {open && (
-                    <div className="invite-row-detail">
-                      {inv.invite_url ? (
-                        <>
-                          <code className="invite-link">{inv.invite_url}</code>
-                          <div className="row">
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-small"
-                              onClick={() => copy(inviteMessage(eventTitle, inv.invite_url!, inv.recipient_name), "Message")}
-                            >
-                              Copy message
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-small"
-                              onClick={() => copy(inv.invite_url!, "Link")}
-                            >
-                              Copy link
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="field-hint">
-                          {inv.used_at
-                            ? `${name} already left a memory with this link.`
-                            : st.text === "Expired"
-                              ? `This link has expired. Make a new one above if ${name} still wants to post.`
-                              : "This link was made before links were saved, so it can't be shown again. Make a new one above."}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-      )}
     </section>
   );
 }

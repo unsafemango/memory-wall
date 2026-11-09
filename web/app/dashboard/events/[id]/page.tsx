@@ -1,20 +1,12 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
 import { api, errorMessage } from "@/lib/api";
-import { formatDate } from "@/lib/format";
-import type { ModerationItem, OrganizerEvent } from "@/lib/types";
-import { useLiveChanges } from "@/lib/useLiveChanges";
-import { useOrigin } from "@/lib/useOrigin";
-import { AppHeader } from "../../../components/AppHeader";
-import { Toast, useToast } from "../../../components/Toast";
-import { copyText } from "../../../components/copy";
-import { EventForm } from "../../EventForm";
-import { Invitations } from "./Invitations";
-import { ShareLink } from "./ShareLink";
+import type { ModerationItem } from "@/lib/types";
+import { useManage } from "./context";
 
 type Status = ModerationItem["status"];
+type Action = "approve" | "reject" | "delete";
 
 const TABS: { status: Status; label: string; empty: string }[] = [
   { status: "pending", label: "To review", empty: "You're all caught up. New memories will show up here." },
@@ -22,34 +14,11 @@ const TABS: { status: Status; label: string; empty: string }[] = [
   { status: "rejected", label: "Hidden", empty: "Nothing hidden. Memories you hide from the page end up here." },
 ];
 
-type Loaded =
-  | { kind: "ok"; event: OrganizerEvent; items: ModerationItem[] }
-  | { kind: "logged-out" }
-  | { kind: "error"; message: string };
-
-async function fetchEvent(id: string): Promise<Loaded> {
-  const [eventRes, itemsRes] = await Promise.all([
-    api(`/api/organizer/events/${id}`),
-    api(`/api/organizer/events/${id}/submissions`),
-  ]);
-  if (eventRes.status === 401) return { kind: "logged-out" };
-  if (!eventRes.ok || !itemsRes.ok) {
-    return { kind: "error", message: eventRes.status === 404 ? "This event doesn't exist." : "We couldn't load this event." };
-  }
-  return { kind: "ok", event: await eventRes.json(), items: await itemsRes.json() };
-}
-
-function SubmissionCard({
-  item,
-  onAction,
-}: {
-  item: ModerationItem;
-  onAction: (id: string, action: "approve" | "reject" | "delete") => Promise<void>;
-}) {
+function SubmissionCard({ item, onAction }: { item: ModerationItem; onAction: (id: string, action: Action) => Promise<void> }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  async function run(action: "approve" | "reject" | "delete") {
+  async function run(action: Action) {
     setBusy(true);
     await onAction(item.id, action);
     setBusy(false);
@@ -110,201 +79,80 @@ function SubmissionCard({
   );
 }
 
-export default function ManageEventPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const origin = useOrigin();
-  const toast = useToast();
-  const [event, setEvent] = useState<OrganizerEvent | null>(null);
-  const [items, setItems] = useState<ModerationItem[]>([]);
+export default function MemoriesPage() {
+  const { event, items, setItems, live, toast } = useManage();
   const [filter, setFilter] = useState<Status>("pending");
-  const [error, setError] = useState("");
 
-  const load = useCallback(() => {
-    fetchEvent(id)
-      .then((result) => {
-        if (result.kind === "logged-out") router.push("/login");
-        else if (result.kind === "error") setError(result.message);
-        else {
-          setEvent(result.event);
-          setItems(result.items);
-        }
-      })
-      .catch(() => setError("We couldn't reach the server. Try again in a minute."));
-  }, [id, router]);
-
-  useEffect(load, [load]);
-
-  // New memories and changes made elsewhere (another tab, another device)
-  // show up without a reload.
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-  const showToast = toast.show;
-  const onLiveChange = useCallback(() => {
-    api(`/api/organizer/events/${id}/submissions`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const fresh: ModerationItem[] = await res.json();
-        const known = new Set(itemsRef.current.map((it) => it.id));
-        const added = fresh.filter((it) => !known.has(it.id) && it.status === "pending");
-        setItems(fresh);
-        if (added.length === 1) showToast(`New memory from ${added[0].sender_name}`);
-        else if (added.length > 1) showToast(`${added.length} new memories to review`);
-      })
-      .catch(() => {});
-  }, [id, showToast]);
-  const live = useLiveChanges(event ? `/api/organizer/events/${id}/stream` : null, onLiveChange);
-
-  async function act(itemID: string, action: "approve" | "reject" | "delete") {
+  async function act(itemID: string, action: Action) {
     const res =
       action === "delete"
         ? await api(`/api/organizer/submissions/${itemID}`, { method: "DELETE" })
         : await api(`/api/organizer/submissions/${itemID}/${action}`, { method: "POST" });
     if (!res.ok) {
-      toast.show(await errorMessage(res));
+      toast(await errorMessage(res));
       return;
     }
     if (action === "delete") {
       setItems((prev) => prev.filter((it) => it.id !== itemID));
-      toast.show("Deleted");
+      toast("Deleted");
     } else {
       const status: Status = action === "approve" ? "approved" : "rejected";
       setItems((prev) => prev.map((it) => (it.id === itemID ? { ...it, status } : it)));
-      toast.show(action === "approve" ? "Approved, it's on the page now" : "Hidden from the page");
+      toast(action === "approve" ? "Approved, it's on the page now" : "Hidden from the page");
     }
   }
 
-  if (error && !event) {
-    return (
-      <div className="app">
-        <AppHeader mode="signed-in" />
-        <main className="app-main">
-          <div className="panel empty">
-            <p className="empty-title">{error}</p>
-            <Link className="btn btn-secondary" href="/dashboard" style={{ marginTop: 12 }}>Back to your events</Link>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  const pageURL = event ? `${origin}/${event.slug}` : "";
-  const counts = Object.fromEntries(TABS.map((t) => [t.status, items.filter((it) => it.status === t.status).length]));
   const activeTab = TABS.find((t) => t.status === filter)!;
   const shown = items.filter((it) => it.status === filter);
 
   return (
-    <div className="app">
-      <AppHeader mode="signed-in" />
-      <main className="app-main">
-        {!event ? (
-          <p className="page-sub" aria-busy="true">Loading…</p>
-        ) : (
-          <>
-            <Link href="/dashboard" className="back-link">← Your events</Link>
-            <div className="page-head">
-              <div>
-                <h1 className="page-title">{event.title}</h1>
-                {event.event_date && <p className="page-sub">{formatDate(event.event_date)}</p>}
-              </div>
-            </div>
-
-            <div className="panel share-bar">
-              <span className="field-name">Page link</span>
-              <code className="share-url">{pageURL}</code>
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={async () => toast.show((await copyText(pageURL)) ? "Page link copied" : "Couldn't copy, select the link instead")}
-                >
-                  Copy
-                </button>
-                <Link className="btn btn-secondary btn-small" href={`/${event.slug}`} target="_blank">View page</Link>
-              </div>
-            </div>
-
-            <div className="manage-grid">
-              <section className="manage-main">
-                <div className="section-head">
-                  <h2 className="section-title">Memories</h2>
-                  <span className={live ? "live-dot on" : "live-dot"} title={live ? "New memories show up here automatically" : "Reconnecting…"}>
-                    {live ? "Live" : "Reconnecting…"}
-                  </span>
-                </div>
-                {!event.moderation_enabled && (
-                  <p className="notice" style={{ marginBottom: 16 }}>
-                    Review is off, so new memories go on the page straight away. You can still hide or delete
-                    them here.
-                  </p>
-                )}
-                <div className="tabs" role="tablist" aria-label="Filter memories">
-                  {TABS.map((t) => (
-                    <button
-                      key={t.status}
-                      role="tab"
-                      type="button"
-                      aria-selected={filter === t.status}
-                      className="tab"
-                      onClick={() => setFilter(t.status)}
-                    >
-                      {t.label} ({counts[t.status]})
-                    </button>
-                  ))}
-                </div>
-                {shown.length === 0 ? (
-                  <div className="panel empty">
-                    <p>{items.length === 0 ? "No memories yet. Share your invite link to get started." : activeTab.empty}</p>
-                  </div>
-                ) : (
-                  <ul className="submission-list">
-                    {shown.map((it) => (
-                      <SubmissionCard key={it.id} item={it} onAction={act} />
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              <aside className="manage-side">
-                <ShareLink
-                  eventID={event.id}
-                  eventTitle={event.title}
-                  shareURL={event.share_url ?? ""}
-                  enabled={event.share_enabled ?? false}
-                  moderationEnabled={event.moderation_enabled}
-                  onChange={(shareURL, enabled) =>
-                    setEvent((prev) => (prev ? { ...prev, share_url: shareURL, share_enabled: enabled } : prev))
-                  }
-                  onToast={toast.show}
-                />
-                <Invitations
-                  eventID={event.id}
-                  eventTitle={event.title}
-                  eventSlug={event.slug}
-                  eventDate={event.event_date}
-                  onToast={toast.show}
-                />
-                <details className="panel settings">
-                  <summary className="section-title">Event settings</summary>
-                  <div style={{ marginTop: 16 }}>
-                    <EventForm
-                      key={JSON.stringify(event)}
-                      event={event}
-                      onSaved={() => {
-                        toast.show("Settings saved");
-                        load();
-                      }}
-                    />
-                  </div>
-                </details>
-              </aside>
-            </div>
-          </>
-        )}
-      </main>
-      <Toast message={toast.message} />
-    </div>
+    <>
+      <div className="section-head content-head">
+        <h1 className="page-title">Memories</h1>
+        <span className={live ? "live-dot on" : "live-dot"} title={live ? "New memories show up here automatically" : "Reconnecting…"}>
+          {live ? "Live" : "Reconnecting…"}
+        </span>
+      </div>
+      {!event.moderation_enabled && (
+        <p className="notice" style={{ marginBottom: 16 }}>
+          Review is off, so new memories go on the page straight away. You can still hide or delete them here.
+        </p>
+      )}
+      <div className="tabs" role="tablist" aria-label="Filter memories">
+        {TABS.map((t) => (
+          <button
+            key={t.status}
+            role="tab"
+            type="button"
+            aria-selected={filter === t.status}
+            className="tab"
+            onClick={() => setFilter(t.status)}
+          >
+            {t.label} ({items.filter((it) => it.status === t.status).length})
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <div className="panel empty">
+          {items.length === 0 ? (
+            <>
+              <p className="empty-title">No memories yet</p>
+              <p>Share your invite link to get started.</p>
+              <Link className="btn btn-primary btn-small" href={`/dashboard/events/${event.id}/invite`} style={{ marginTop: 14 }}>
+                Invite people
+              </Link>
+            </>
+          ) : (
+            <p>{activeTab.empty}</p>
+          )}
+        </div>
+      ) : (
+        <ul className="submission-list">
+          {shown.map((it) => (
+            <SubmissionCard key={it.id} item={it} onAction={act} />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
