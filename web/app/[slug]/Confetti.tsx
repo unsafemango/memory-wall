@@ -1,42 +1,70 @@
 "use client";
 import { useEffect, useState } from "react";
+import { DEFAULT_EFFECT, type ConfettiEffect, type ConfettiShape } from "@/lib/occasions";
 
-const COLORS = ["#ff5da2", "#8b5cf6", "#ffb347", "#ffd93d", "#5ec8f0"];
+type Piece = {
+  left: number;
+  color: string;
+  shape: ConfettiShape;
+  duration: number;
+  delay: number;
+  drift: number;
+  spin: number;
+  scale: number;
+};
 
-type Piece = { left: number; color: string; duration: number; delay: number; round: boolean };
+function makePieces(effect: ConfettiEffect, count: number, burst: boolean): Piece[] {
+  const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
+  return Array.from({ length: count }, () => {
+    const duration = burst ? 2.5 + Math.random() * 2 : (8 + Math.random() * 7) / effect.speed;
+    return {
+      left: Math.random() * 100,
+      color: pick(effect.colors),
+      shape: pick(effect.shapes),
+      duration,
+      // A burst all starts near the top. Otherwise a negative delay means the
+      // page is already full of confetti when it opens, not just starting.
+      delay: burst ? Math.random() * 0.8 : -Math.random() * duration,
+      drift: (Math.random() - 0.5) * 120,
+      spin: (Math.random() < 0.5 ? -1 : 1) * (180 + Math.random() * 360),
+      scale: 0.8 + Math.random() * 0.5,
+    };
+  });
+}
 
-export function Confetti({ count = 16 }: { count?: number }) {
+// Confetti falls behind the page's content, over the whole window. With burst
+// set it falls once and quickly instead, for a moment like the countdown ending.
+export function Confetti({ effect = DEFAULT_EFFECT, burst = false }: { effect?: ConfettiEffect; burst?: boolean }) {
   const [pieces, setPieces] = useState<Piece[]>([]);
 
   // Random positions are made after mount. Making them during render would
   // give the server and the browser different HTML and a hydration error.
   useEffect(() => {
-    const frame = requestAnimationFrame(() =>
-      setPieces(
-        Array.from({ length: count }, () => ({
-          left: Math.random() * 96 + 2,
-          color: COLORS[Math.floor(Math.random() * COLORS.length)],
-          duration: 2.5 + Math.random() * 2.5,
-          delay: Math.random() * 3,
-          round: Math.random() < 0.3,
-        })),
-      ),
-    );
+    const frame = requestAnimationFrame(() => {
+      // Fewer on a phone, where the same number looks much busier.
+      const count = Math.round(effect.count * (window.innerWidth < 640 ? 0.6 : 1) * (burst ? 2.5 : 1));
+      setPieces(makePieces(effect, count, burst));
+    });
     return () => cancelAnimationFrame(frame);
-  }, [count]);
+  }, [effect, burst]);
 
   return (
-    <div className="fx-layer" aria-hidden="true">
+    <div className={burst ? "fx-layer burst" : "fx-layer"} aria-hidden="true">
       {pieces.map((p, i) => (
         <span
           key={i}
-          className={p.round ? "confetti round" : "confetti"}
-          style={{
-            left: `${p.left}%`,
-            background: p.color,
-            animationDuration: `${p.duration}s`,
-            animationDelay: `${p.delay}s`,
-          }}
+          className={`confetti ${p.shape}`}
+          style={
+            {
+              left: `${p.left}%`,
+              background: p.color,
+              animationDuration: `${p.duration}s`,
+              animationDelay: `${p.delay}s`,
+              "--drift": `${p.drift}px`,
+              "--spin": `${p.spin}deg`,
+              "--scale": p.scale,
+            } as React.CSSProperties
+          }
         />
       ))}
     </div>

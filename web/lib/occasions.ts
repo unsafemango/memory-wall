@@ -3,6 +3,23 @@
 
 export type Tone = { key: string; label: string };
 
+export type ConfettiShape = "strip" | "round" | "heart" | "star" | "petal";
+
+// How an occasion's confetti looks. speed 1 is a normal fall, lower is gentler.
+export type ConfettiEffect = {
+  colors: string[];
+  shapes: ConfettiShape[];
+  count: number;
+  speed: number;
+};
+
+export const DEFAULT_EFFECT: ConfettiEffect = {
+  colors: ["#ff5da2", "#8b5cf6", "#ffb347", "#ffd93d", "#5ec8f0"],
+  shapes: ["strip", "strip", "round"],
+  count: 36,
+  speed: 1,
+};
+
 export type Occasion = {
   key: string;
   label: string;
@@ -16,8 +33,10 @@ export type Occasion = {
   // Shown in the message box on the guest page.
   messagePrompt: string;
   signoff: string;
-  // Celebrations get confetti and the playful tone.
+  // Celebrations get the playful tone, a countdown, and confetti.
   celebration: boolean;
+  // Left out for occasions that shouldn't have any.
+  effect?: ConfettiEffect;
   tones: Tone[];
 };
 
@@ -33,6 +52,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "birthday",
+    effect: DEFAULT_EFFECT,
     label: "Birthday",
     titleExample: "Sarah's 30th Birthday",
     honoreeLabel: "Whose birthday is it?",
@@ -43,6 +63,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "wedding",
+    effect: { colors: ["#f7b7c5", "#e8799b", "#e3c179", "#d9a0c9"], shapes: ["petal", "petal", "heart"], count: 26, speed: 0.6 },
     label: "Wedding",
     titleExample: "Alex & Jordan's Wedding",
     honoreeLabel: "Who's getting married?",
@@ -53,6 +74,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "anniversary",
+    effect: { colors: ["#e3b04b", "#e8799b", "#c9963a", "#f2c4ce"], shapes: ["heart", "round", "strip"], count: 24, speed: 0.65 },
     label: "Anniversary",
     titleExample: "Mom & Dad's 40th Anniversary",
     honoreeLabel: "Whose anniversary is it?",
@@ -63,6 +85,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "graduation",
+    effect: { colors: ["#f2b632", "#6d28d9", "#2c3a8c", "#e8a01c"], shapes: ["star", "star", "strip"], count: 34, speed: 0.95 },
     label: "Graduation",
     titleExample: "Maya's Graduation",
     honoreeLabel: "Who's graduating?",
@@ -73,6 +96,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "baby",
+    effect: { colors: ["#a8dcf2", "#f7c6d9", "#fbe39a", "#c5e8c9", "#d6c8f5"], shapes: ["star", "round", "round"], count: 24, speed: 0.55 },
     label: "New baby",
     titleExample: "Welcome, Baby Rivera",
     honoreeLabel: "Who is it for?",
@@ -83,6 +107,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "retirement",
+    effect: { colors: ["#e3b04b", "#f2c14e", "#d9823b", "#7c9a6d"], shapes: ["strip", "star", "round"], count: 26, speed: 0.75 },
     label: "Retirement",
     titleExample: "Dana's Retirement",
     honoreeLabel: "Who's retiring?",
@@ -93,6 +118,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "farewell",
+    effect: { colors: ["#5ec8f0", "#38b2ac", "#ffb347", "#8b5cf6"], shapes: ["strip", "round"], count: 28, speed: 0.8 },
     label: "Farewell",
     titleExample: "Goodbye and Good Luck, Sam",
     honoreeLabel: "Who's moving on?",
@@ -119,6 +145,7 @@ export const OCCASIONS: Occasion[] = [
   {
     ...celebration,
     key: "other",
+    effect: DEFAULT_EFFECT,
     label: "Something else",
     titleExample: "Our Team's Big Win",
     honoreeLabel: "Who is it for?",

@@ -41,35 +41,60 @@ h3 {
   font-family: var(--font-fredoka), var(--font-quicksand), system-ui, sans-serif;
 }
 
-/* Confetti in the event page hero */
+/* Confetti over the whole window, behind the page's content. */
 .fx-layer {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
 }
+.fx-layer.burst {
+  z-index: 2;
+}
 .confetti {
   position: absolute;
-  top: -8%;
+  top: -24px;
   width: 8px;
   height: 13px;
   border-radius: 2px;
-  opacity: 0.9;
+  opacity: 0.85;
+  will-change: transform;
   animation: fall linear infinite;
+}
+.burst .confetti {
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.3, 0.4, 0.7, 1);
 }
 .confetti.round {
   width: 9px;
   height: 9px;
   border-radius: 50%;
 }
+.confetti.petal {
+  width: 12px;
+  height: 15px;
+  border-radius: 80% 10% 80% 10%;
+}
+.confetti.star {
+  width: 15px;
+  height: 15px;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 62% 35%, 98% 35%, 69% 57%, 79% 91%, 50% 70%, 21% 91%, 31% 57%, 2% 35%, 38% 35%);
+}
+.confetti.heart {
+  width: 15px;
+  height: 14px;
+  border-radius: 0;
+  clip-path: path("M7.5 14 C2 9.5 0 7 0 4 C0 1.6 1.8 0 4 0 C5.4 0 6.7 0.7 7.5 2 C8.3 0.7 9.6 0 11 0 C13.2 0 15 1.6 15 4 C15 7 13 9.5 7.5 14 Z");
+}
 @keyframes fall {
   0% {
-    transform: translateY(0) rotate(0deg);
-    opacity: 0.95;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(var(--scale, 1));
   }
   100% {
-    transform: translateY(460px) rotate(360deg);
-    opacity: 0.6;
+    transform: translate3d(var(--drift, 0), calc(100vh + 48px), 0) rotate(var(--spin, 360deg)) scale(var(--scale, 1));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -85,6 +110,11 @@ h3 {
   color: var(--ink);
   background: linear-gradient(180deg, #fdf1ff 0%, var(--cream) 55%, #fff2e2 100%);
   padding-bottom: 64px;
+}
+/* Everything on the page sits in front of the confetti. */
+.wall > :not(.fx-layer) {
+  position: relative;
+  z-index: 1;
 }
 
 .hero {
@@ -1728,5 +1758,110 @@ textarea.input {
 @keyframes live-pulse {
   50% {
     box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2);
+  }
+}
+
+/* Countdown and the hidden-until-the-event state on the event page */
+.countdown {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.countdown-cell {
+  min-width: 72px;
+  padding: 12px 8px 10px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 28px -18px rgba(59, 29, 74, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.countdown-value {
+  font-family: var(--font-fredoka), var(--font-quicksand), system-ui, sans-serif;
+  font-size: 2rem;
+  line-height: 1.1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--pink-deep);
+}
+.countdown-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+@media (max-width: 420px) {
+  .countdown {
+    width: 100%;
+    gap: 6px;
+  }
+  .countdown-cell {
+    min-width: 0;
+    flex: 1;
+    max-width: 76px;
+    padding: 10px 4px 8px;
+  }
+  .countdown-value {
+    font-size: 1.55rem;
+  }
+  .countdown-label {
+    font-size: 0.68rem;
+  }
+}
+.hero-eyebrow {
+  text-align: center;
+  text-wrap: balance;
+}
+.hero-arrived {
+  margin: 8px 0 0;
+  font-family: var(--font-fredoka), var(--font-quicksand), system-ui, sans-serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--purple-deep);
+}
+.reveal-card {
+  width: min(100% - 32px, 480px);
+  margin: 0 auto;
+  padding: 24px 22px;
+  border-radius: 24px;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 18px 40px -24px rgba(59, 29, 74, 0.5);
+}
+.reveal-title {
+  margin: 0 0 6px;
+  font-family: var(--font-fredoka), var(--font-quicksand), system-ui, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--pink-deep);
+}
+.reveal-body {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.invite-togo {
+  margin: 8px 0 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--pink-deep);
+}
+.notice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .field-row {
+    grid-template-columns: 1fr;
   }
 }

@@ -20,8 +20,8 @@ const steps = [
 export default function Home() {
   return (
     <main className="wall">
+      <Confetti />
       <section className="hero">
-        <Confetti />
         <div className="hero-logo"><Logo size={72} /></div>
         <span className="hero-eyebrow">Birthdays, weddings, send-offs</span>
         <h1 className="name">Memory Wall</h1>
