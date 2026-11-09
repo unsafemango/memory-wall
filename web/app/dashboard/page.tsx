@@ -3,9 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { formatDate, plural } from "@/lib/format";
+import { formatDate, plural, timeToGo } from "@/lib/format";
 import type { Organizer, OrganizerEvent } from "@/lib/types";
 import { AppHeader } from "../components/AppHeader";
+import { ConfirmEmailNotice } from "../components/ConfirmEmailNotice";
 import { Toast, useToast } from "../components/Toast";
 import { copyText } from "../components/copy";
 import { EventForm } from "./EventForm";
@@ -18,7 +19,12 @@ function EventCard({ event, onCopied }: { event: OrganizerEvent; onCopied: (ok: 
     <li className="panel event-card">
       <div>
         <h2 className="event-card-title">{event.title}</h2>
-        {event.event_date && <p className="field-hint">{formatDate(event.event_date, "short")}</p>}
+        {event.event_date && (
+          <p className="field-hint">
+            {formatDate(event.event_date, "short")}
+            {timeToGo(event.event_at) && ` · ${timeToGo(event.event_at)}`}
+          </p>
+        )}
       </div>
       <div className="badges">
         {event.moderation_enabled &&
@@ -104,6 +110,12 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
+
+            {!organizer.email_verified && (
+              <div style={{ marginTop: 16 }}>
+                <ConfirmEmailNotice email={organizer.email} toast={toast.show} />
+              </div>
+            )}
 
             {firstEvent && (
               <section className="panel" style={{ marginTop: 24 }}>

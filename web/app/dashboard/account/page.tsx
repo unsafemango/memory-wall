@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { api, errorMessage } from "@/lib/api";
 import type { Organizer } from "@/lib/types";
 import { AppHeader, ORGANIZER_UPDATED } from "../../components/AppHeader";
+import { ConfirmEmailNotice } from "../../components/ConfirmEmailNotice";
 import { Toast, useToast } from "../../components/Toast";
 
 function ProfileForm({ organizer, onSaved }: { organizer: Organizer; onSaved: (o: Organizer) => void }) {
@@ -45,7 +46,9 @@ function ProfileForm({ organizer, onSaved }: { organizer: Organizer; onSaved: (o
       <label className="field">
         <span className="field-name">Email</span>
         <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-        <span className="field-hint">You use this to log in.</span>
+        <span className="field-hint">
+          You use this to log in{organizer.email_verified ? ", and it's confirmed." : "."}
+        </span>
       </label>
       {emailChanged && (
         <label className="field">
@@ -142,6 +145,56 @@ function PasswordForm({ onSaved }: { onSaved: () => void }) {
   );
 }
 
+function NotificationSettings({
+  organizer,
+  onChanged,
+  toast,
+}: {
+  organizer: Organizer;
+  onChanged: (o: Organizer) => void;
+  toast: (message: string) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  async function setEnabled(enabled: boolean) {
+    setSaving(true);
+    try {
+      const res = await api("/api/organizer/me/notifications", { method: "POST", body: JSON.stringify({ enabled }) });
+      if (!res.ok) {
+        toast(await errorMessage(res));
+        return;
+      }
+      onChanged(await res.json());
+      toast(enabled ? "New memory emails are on" : "New memory emails are off");
+    } catch {
+      toast("We couldn't reach the server. Try again in a minute.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="form">
+      {!organizer.email_verified && <ConfirmEmailNotice email={organizer.email} toast={toast} />}
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={organizer.notify_new_memories}
+          disabled={saving}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span>
+          <span className="field-name">Email me when a new memory arrives</span>
+          <br />
+          <span className="field-hint">
+            At most one email per event every 10 minutes, so a busy day won&apos;t fill your inbox.
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const toast = useToast();
@@ -181,7 +234,7 @@ export default function AccountPage() {
                 onSaved={(updated) => {
                   setOrganizer(updated);
                   window.dispatchEvent(new Event(ORGANIZER_UPDATED));
-                  toast.show("Profile saved");
+                  toast.show(updated.email_verified ? "Profile saved" : "Profile saved. Check your email to confirm it.");
                 }}
               />
             </section>
@@ -189,6 +242,11 @@ export default function AccountPage() {
               <h2 className="section-title">Password</h2>
               <p className="section-sub">Choose a new password for logging in.</p>
               <PasswordForm onSaved={() => toast.show("Password changed")} />
+            </section>
+            <section className="panel">
+              <h2 className="section-title">Notifications</h2>
+              <p className="section-sub">Hear about new memories without checking the page.</p>
+              <NotificationSettings organizer={organizer} onChanged={setOrganizer} toast={toast.show} />
             </section>
           </div>
         )}

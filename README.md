@@ -4,11 +4,13 @@ Memory Wall is a private, shared page for any occasion: a birthday, a wedding, a
 
 ## Features
 
-- **Events:** organizers create an event with its own page, date, and closing message. The occasion tailors the page's wording and the writing assistant.
+- **Events:** organizers create an event with its own page, date, time, and closing message. The occasion tailors the page's wording, its confetti, and the writing assistant.
+- **Countdown and reveal:** the page counts down to the event, and memories can stay hidden until it ends, then open on every page at once.
 - **Invitations:** a reusable share link for large groups, plus single-use personal links created individually or in bulk from a list of names.
 - **Moderation:** submissions are held for review by default and can be approved, hidden, or deleted.
 - **Photo and video uploads:** files upload directly to object storage, and videos are processed in the background.
 - **Writing assistant:** guests can request three drafts in a chosen tone, optionally built around a personal detail.
+- **Email notifications:** organizers confirm their address and get an email about new memories, batched to at most one per event every 10 minutes.
 - **Live updates:** new submissions reach the organizer's dashboard, and approved memories reach the event page, without a reload.
 
 ## Tech stack
@@ -131,6 +133,8 @@ Tests that need a database are skipped when `DATABASE_URL` is not set.
 | `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Bucket settings and credentials                                             |
 | `INVITATION_LINK_KEY`                                      | 64 hex characters that encrypt personal invitation links. Must stay the same once in use |
 | `ANTHROPIC_API_KEY`                                        | Enables the writing assistant (optional)                                    |
+| `RESEND_API_KEY`                                           | Enables email through Resend (optional)                                     |
+| `EMAIL_FROM`                                               | Sender for email, on a domain verified with Resend, e.g. `Memory Wall <notifications@mail.example.com>` |
 | `TRUST_PROXY_HEADERS`                                      | Set to `true` behind a trusted proxy, so rate limits use the client IP      |
 
 ### Web
