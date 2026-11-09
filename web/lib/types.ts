@@ -6,6 +6,13 @@ export type EventInfo = {
   closing_message?: string;
   occasion?: string;
   honoree_name?: string;
+  // "18:30", when the event has a time.
+  event_time?: string;
+  // IANA name, like America/Toronto.
+  timezone?: string;
+  // The exact moment of the event.
+  event_at?: string;
+  hide_until_event?: boolean;
 };
 
 export type Memory = {
@@ -40,6 +47,8 @@ export type Organizer = {
   email: string;
   display_name: string;
   created_at: string;
+  email_verified: boolean;
+  notify_new_memories: boolean;
 };
 
 export type InvitationInfo = {

@@ -495,7 +495,7 @@ func TestHiddenEventKeepsMemoriesPrivate(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 	slug := "hide-" + suffix[:8]
 	events := store.NewEventStore(db)
-	event := store.Event{OwnerID: ownerID, Title: "Surprise", Slug: slug, EventDate: "2030-01-01", EventAt: &future, Timezone: "UTC", HideUntilEvent: true}
+	event := store.Event{OwnerID: ownerID, Title: "Surprise", Slug: slug, EventDate: "2030-01-01", EventAt: &future, Timezone: "UTC", HideUntilEvent: true, ClosingMessage: "the closing surprise"}
 	if event.ID, err = events.Create(ctx, event); err != nil {
 		t.Fatalf("create event: %v", err)
 	}
@@ -510,7 +510,7 @@ func TestHiddenEventKeepsMemoriesPrivate(t *testing.T) {
 		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/events/"+slug+"/memories", nil))
 		return w.Body.String()
 	}
-	if body := get(); strings.Contains(body, secret) || !strings.Contains(body, `"locked":true`) {
+	if body := get(); strings.Contains(body, secret) || strings.Contains(body, "closing surprise") || !strings.Contains(body, `"locked":true`) {
 		t.Fatalf("before the event, memories must not be sent: %s", body)
 	}
 
@@ -519,7 +519,7 @@ func TestHiddenEventKeepsMemoriesPrivate(t *testing.T) {
 	if err := events.Update(ctx, event); err != nil {
 		t.Fatalf("update event: %v", err)
 	}
-	if body := get(); !strings.Contains(body, secret) {
+	if body := get(); !strings.Contains(body, secret) || !strings.Contains(body, "closing surprise") {
 		t.Fatalf("after the event, memories should be sent: %s", body)
 	}
 }

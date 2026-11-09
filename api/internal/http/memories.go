@@ -25,9 +25,10 @@ func (s *Server) getMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hidden until the event: the memories aren't sent at all, so nobody can
-	// find them in the page's data.
+	// Hidden until the event: the memories and closing message aren't sent at
+	// all, so nobody can find them in the page's data.
 	if event.Hidden(time.Now()) {
+		event.ClosingMessage = ""
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"event": event, "memories": []store.Memory{}, "locked": true})
 		return

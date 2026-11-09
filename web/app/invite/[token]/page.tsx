@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { API_URL, apiError, errorMessage } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, isFuture, timeToGo } from "@/lib/format";
+import { Confetti } from "../../[slug]/Confetti";
 import { occasionFor } from "@/lib/occasions";
 import { ACCEPTED_FILE_TYPES, uploadFile } from "@/lib/upload";
 
@@ -14,7 +15,7 @@ type Invitation = {
   recipient_name: string;
   // True for the event's share link, which anyone can use more than once.
   shared: boolean;
-  event: { title: string; slug: string; event_date?: string; moderation_enabled: boolean; occasion?: string };
+  event: { title: string; slug: string; event_date?: string; moderation_enabled: boolean; occasion?: string; event_at?: string; hide_until_event?: boolean };
 };
 
 type LinkProblem = { title: string; body: string };
@@ -189,20 +190,25 @@ export default function InvitePage() {
 
   const { event } = invitation;
   const occasion = occasionFor(event.occasion);
+  const hiddenForNow = Boolean(event.hide_until_event) && isFuture(event.event_at);
+  const toGo = occasion.celebration ? timeToGo(event.event_at) : "";
 
   if (submitted) {
     return (
       <main className="wall">
+        {occasion.effect && <Confetti effect={occasion.effect} burst />}
         <section className="invite-card invite-center">
           <div className="done-badge" aria-hidden="true">♥</div>
           <h1 className="invite-title">Thank you{senderName ? `, ${senderName}` : ""}!</h1>
           <p className="invite-status">
-            {event.moderation_enabled
+            {hiddenForNow
+              ? `Your memory for ${event.title} is saved. It stays a surprise until the event, then everything appears together.`
+              : event.moderation_enabled
               ? `Your memory for ${event.title} has been sent. It'll appear on the page once it's been approved.`
               : `Your memory is now on the page for ${event.title}.`}
           </p>
           <div className="hero-actions">
-            <Link className="wall-button" href={`/${event.slug}`}>See the page</Link>
+            <Link className="wall-button" href={`/${event.slug}`}>{hiddenForNow ? "See the countdown" : "See the page"}</Link>
             {invitation.shared && (
               <button type="button" className="wall-link link-button" onClick={startAnother}>
                 Add another memory
@@ -229,6 +235,7 @@ export default function InvitePage() {
         </p>
         <h1 className="invite-title">{event.title}</h1>
         {event.event_date && <p className="invite-date">{formatDate(event.event_date)}</p>}
+        {toGo && <p className="invite-togo">{toGo}{hiddenForNow ? ". Your memory stays a surprise until then." : ""}</p>}
         <p className="invite-status invite-intro">
           Write a note, add a photo or video, or both. It only takes a minute.
         </p>

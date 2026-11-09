@@ -7,10 +7,11 @@ import { MemoryCard } from "./MemoryCard";
 
 // LiveWall shows the event's memories and keeps them current: when the
 // organizer approves, hides, or deletes one, the page updates by itself.
-export function LiveWall({ slug, initial }: { slug: string; initial: Memory[] }) {
+// revealed means the memories just opened, so they all fade in together.
+export function LiveWall({ slug, initial, revealed = false }: { slug: string; initial: Memory[]; revealed?: boolean }) {
   const [memories, setMemories] = useState(initial);
   // Memories that arrived after the page loaded, so they can fade in.
-  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set(revealed ? initial.map((m) => m.id) : []));
   const known = useRef(new Set(initial.map((m) => m.id)));
 
   const refresh = useCallback(() => {

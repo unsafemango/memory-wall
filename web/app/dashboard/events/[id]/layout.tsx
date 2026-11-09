@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, isFuture, timeToGo } from "@/lib/format";
 import type { ModerationItem, OrganizerEvent } from "@/lib/types";
 import { useLiveChanges } from "@/lib/useLiveChanges";
 import { useOrigin } from "@/lib/useOrigin";
@@ -110,7 +110,15 @@ export default function ManageLayout({ children }: { children: React.ReactNode }
           <aside className="manage-sidebar">
             <div className="sidebar-event">
               <p className="sidebar-title">{event.title}</p>
-              {event.event_date && <p className="field-hint">{formatDate(event.event_date, "short")}</p>}
+              {event.event_date && (
+                <p className="field-hint">
+                  {formatDate(event.event_date, "short")}
+                  {timeToGo(event.event_at) && ` · ${timeToGo(event.event_at)}`}
+                </p>
+              )}
+              {event.hide_until_event && isFuture(event.event_at) && (
+                <p className="field-hint">Memories are hidden until then</p>
+              )}
             </div>
             <nav className="sidebar-nav" aria-label="Event sections">
               {sections.map((s) => (

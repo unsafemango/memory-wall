@@ -29,11 +29,19 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
   const [slug, setSlug] = useState(event?.slug ?? "");
   const [slugEdited, setSlugEdited] = useState(Boolean(event));
   const [eventDate, setEventDate] = useState(event?.event_date ?? "");
+  const [eventTime, setEventTime] = useState(event?.event_time ?? "");
+  const [hideUntilEvent, setHideUntilEvent] = useState(event?.hide_until_event ?? false);
   const [closingMessage, setClosingMessage] = useState(event?.closing_message ?? "");
   const [moderationEnabled, setModerationEnabled] = useState(event?.moderation_enabled ?? true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const details = occasionFor(occasion);
+  // Hiding only makes sense for a celebration with a date to count down to.
+  const canHide = Boolean(eventDate) && details.celebration;
+  // An event keeps its timezone when edited from elsewhere. Older events only
+  // have the UTC placeholder, so those take this device's.
+  const timezone =
+    event?.timezone && event.timezone !== "UTC" ? event.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const host = useOrigin().replace(/^https?:\/\//, "");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -45,6 +53,9 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
         title,
         slug,
         event_date: eventDate,
+        event_time: eventDate ? eventTime : "",
+        timezone,
+        hide_until_event: canHide && hideUntilEvent,
         closing_message: closingMessage,
         moderation_enabled: moderationEnabled,
         occasion,
@@ -137,10 +148,43 @@ export function EventForm({ event, onSaved, onCancel }: Props) {
         </span>
       </div>
 
-      <label className="field">
-        <span className="field-name">Date (optional)</span>
-        <input className="input" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
-      </label>
+      <div className="field-row">
+        <label className="field">
+          <span className="field-name">Date (optional)</span>
+          <input className="input" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
+        </label>
+        <label className="field">
+          <span className="field-name">Time (optional)</span>
+          <input
+            className="input"
+            type="time"
+            value={eventTime}
+            onChange={(e) => setEventTime(e.target.value)}
+            disabled={!eventDate}
+          />
+        </label>
+      </div>
+      {eventDate && (
+        <p className="field-hint">
+          {details.celebration ? "The page counts down to this, " : "Shown on the page, "}
+          {eventTime ? `in ${timezone.replace(/_/g, " ")} time.` : "from the start of the day. Add a time to be more exact."}
+        </p>
+      )}
+
+      {canHide && (
+        <label className="check">
+          <input type="checkbox" checked={hideUntilEvent} onChange={(e) => setHideUntilEvent(e.target.checked)} />
+          <span>
+            <span className="field-name">Keep memories hidden until the event</span>
+            <br />
+            <span className="field-hint">
+              {hideUntilEvent
+                ? "The page only shows the countdown. When it ends, everything appears at once. Guests can still add memories."
+                : "Memories show on the page as they come in."}
+            </span>
+          </span>
+        </label>
+      )}
 
       <label className="field">
         <span className="field-name">Closing message (optional)</span>

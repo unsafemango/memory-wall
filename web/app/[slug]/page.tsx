@@ -1,16 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { formatDate } from "@/lib/format";
-import { occasionFor } from "@/lib/occasions";
+import { isFuture } from "@/lib/format";
 import type { EventInfo, Memory } from "@/lib/types";
-import { Confetti } from "./Confetti";
-import { LiveWall } from "./LiveWall";
+import { EventStage } from "./EventStage";
 
 // Server-side requests can use a different address than the browser does,
 // e.g. http://api:8080 inside Docker.
 const API_URL = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
 
-async function getMemories(slug: string): Promise<{ event: EventInfo; memories: Memory[] } | null> {
+async function getMemories(slug: string): Promise<{ event: EventInfo; memories: Memory[]; locked?: boolean } | null> {
   const res = await fetch(`${API_URL}/api/events/${slug}/memories`, { cache: "no-store" });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`memories request failed: ${res.status}`);
@@ -28,31 +26,9 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   const data = await getMemories(slug);
   if (!data) notFound();
 
-  const { event, memories } = data;
-  const occasion = occasionFor(event.occasion);
-
   return (
     <main className="wall">
-      <section className="hero">
-        {occasion.celebration && <Confetti />}
-        {(event.event_date || occasion.celebration) && (
-          <span className="hero-eyebrow">{event.event_date ? formatDate(event.event_date) : "A very special day"}</span>
-        )}
-        <h1 className="name">{event.title}</h1>
-        <p className="hero-sub">{occasion.heroLine}</p>
-      </section>
-
-      <LiveWall slug={event.slug} initial={memories} />
-
-      {event.closing_message && (
-        <section className="closing-wrap">
-          <div className="message-wrap">
-            <div className="tag">For {event.title}</div>
-            <p>{event.closing_message}</p>
-            <div className="signoff">{occasion.signoff}</div>
-          </div>
-        </section>
-      )}
+      <EventStage event={data.event} memories={data.memories} locked={Boolean(data.locked)} upcoming={isFuture(data.event.event_at)} />
     </main>
   );
 }
