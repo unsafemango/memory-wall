@@ -105,6 +105,7 @@ func main() {
 	// The job worker runs alongside the HTTP server for the life of the program.
 	worker := jobs.NewWorker(jobs.NewStore(db), logger)
 	worker.Handle(store.JobProcessVideo, jobs.NewVideoProcessor(files, store.NewMediaStore(db)).Handle)
+	worker.Handle(store.JobNotifyMemories, jobs.NewMemoryNotifier(mailer, store.NewSubmissionStore(db), siteURL).Handle)
 	workerDone := make(chan struct{})
 	go func() {
 		worker.Run(ctx)

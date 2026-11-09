@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unsafemango/memory-wall/internal/auth"
+	mail "github.com/unsafemango/memory-wall/internal/email"
 	"github.com/unsafemango/memory-wall/internal/store"
 )
 
@@ -520,5 +521,148 @@ func TestHiddenEventKeepsMemoriesPrivate(t *testing.T) {
 	}
 	if body := get(); !strings.Contains(body, secret) {
 		t.Fatalf("after the event, memories should be sent: %s", body)
+	}
+}
+
+// TestEmailConfirmation follows the links an organizer gets by email.
+func TestEmailConfirmation(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping database test")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	var lastText string
+	resend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text string `json:"text"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		lastText = body.Text
+		w.Write([]byte(`{"id":"1"}`))
+	}))
+	t.Cleanup(resend.Close)
+
+	_, suffix, _ := auth.NewToken()
+	address := "confirm-" + suffix[:8] + "@test.example"
+	organizers := store.NewOrganizerStore(db)
+	t.Cleanup(func() {
+		db.Exec(context.Background(), `DELETE FROM organizers WHERE email LIKE $1`, "%"+suffix[:8]+"@test.example")
+	})
+
+	router := NewServer(Deps{
+		Organizers: organizers,
+		Sessions:   store.NewSessionStore(db),
+		SiteURL:    "http://site.example",
+		Mailer:     mail.New("re_test", "n@mail.example", resend.URL),
+	}).Routes()
+	ip := 0
+	call := func(method, path, body, cookie string) *httptest.ResponseRecorder {
+		ip++
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "192.0.2." + strconv.Itoa(150+ip) + ":1"
+		if cookie != "" {
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+	tokenFromEmail := func() string {
+		t.Helper()
+		_, rest, ok := strings.Cut(lastText, "/confirm-email/")
+		if !ok {
+			t.Fatalf("no link in email: %q", lastText)
+		}
+		return strings.Fields(rest)[0]
+	}
+	organizer := func() store.Organizer {
+		t.Helper()
+		o, err := organizers.GetByEmail(ctx, address)
+		if err != nil {
+			t.Fatalf("load organizer: %v", err)
+		}
+		return o
+	}
+
+	w := call(http.MethodPost, "/api/auth/signup", `{"email":"`+address+`","password":"long-enough-password","display_name":"Sam"}`, "")
+	if w.Code >= 300 {
+		t.Fatalf("signup: %d %s", w.Code, w.Body.String())
+	}
+	var cookie string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == sessionCookie {
+			cookie = c.Value
+		}
+	}
+	if organizer().EmailVerified {
+		t.Fatal("a new account shouldn't start confirmed")
+	}
+
+	// Asking again replaces the first link.
+	first := tokenFromEmail()
+	if w := call(http.MethodPost, "/api/organizer/me/send-confirmation", "", cookie); w.Code != http.StatusNoContent {
+		t.Fatalf("resend: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(http.MethodPost, "/api/auth/confirm-email", `{"token":"`+first+`"}`, ""); w.Code != http.StatusGone {
+		t.Fatalf("old link: got %d, want 410", w.Code)
+	}
+
+	token := tokenFromEmail()
+	if w := call(http.MethodPost, "/api/auth/confirm-email", `{"token":"`+token+`"}`, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("confirm: %d %s", w.Code, w.Body.String())
+	}
+	if !organizer().EmailVerified {
+		t.Fatal("should be confirmed")
+	}
+	if w := call(http.MethodPost, "/api/auth/confirm-email", `{"token":"`+token+`"}`, ""); w.Code != http.StatusGone {
+		t.Fatalf("reused link: got %d, want 410", w.Code)
+	}
+
+	// Saving the same email keeps it confirmed; a new one has to be confirmed again.
+	if w := call(http.MethodPatch, "/api/organizer/me", `{"email":"`+address+`","display_name":"Samira"}`, cookie); w.Code != http.StatusOK {
+		t.Fatalf("rename: %d %s", w.Code, w.Body.String())
+	}
+	if !organizer().EmailVerified {
+		t.Fatal("renaming shouldn't undo the confirmation")
+	}
+	oldLink := tokenFromEmail()
+	address = "new-" + suffix[:8] + "@test.example"
+	if w := call(http.MethodPatch, "/api/organizer/me", `{"email":"`+address+`","display_name":"Samira","current_password":"long-enough-password"}`, cookie); w.Code != http.StatusOK {
+		t.Fatalf("change email: %d %s", w.Code, w.Body.String())
+	}
+	if organizer().EmailVerified {
+		t.Fatal("a new email has to be confirmed")
+	}
+	if tokenFromEmail() == oldLink {
+		t.Fatal("a new email should get its own link")
+	}
+
+	// Notifications: the setting, and the one-click link with no login.
+	w = call(http.MethodPost, "/api/organizer/me/notifications", `{"enabled":false}`, cookie)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"notify_new_memories":false`) {
+		t.Fatalf("turn off: %d %s", w.Code, w.Body.String())
+	}
+	call(http.MethodPost, "/api/organizer/me/notifications", `{"enabled":true}`, cookie)
+	var unsubscribe string
+	if err := db.QueryRow(ctx, `SELECT unsubscribe_token FROM organizers WHERE email = $1`, address).Scan(&unsubscribe); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(call(http.MethodGet, "/api/organizer/me", "", cookie).Body.String(), unsubscribe) {
+		t.Fatal("the unsubscribe token shouldn't be in account data")
+	}
+	if w := call(http.MethodPost, "/api/unsubscribe/"+unsubscribe, "", ""); w.Code != http.StatusNoContent {
+		t.Fatalf("unsubscribe: %d %s", w.Code, w.Body.String())
+	}
+	if organizer().NotifyNewMemories {
+		t.Fatal("unsubscribing should turn notifications off")
+	}
+	if w := call(http.MethodPost, "/api/unsubscribe/nope", "", ""); w.Code != http.StatusNotFound {
+		t.Fatalf("bad token: got %d, want 404", w.Code)
 	}
 }

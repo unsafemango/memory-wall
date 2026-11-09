@@ -99,6 +99,10 @@ func (s *SubmissionStore) Create(ctx context.Context, sub Submission, media *Med
 		}
 	}
 
+	if err := queueNotification(ctx, tx, sub.EventID); err != nil {
+		return "", err
+	}
+
 	return id, tx.Commit(ctx)
 }
 
